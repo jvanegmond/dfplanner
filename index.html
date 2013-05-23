@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html>
+<head>
+	<script src="dfdesigner.js"></script>
+	<style>
+		body {
+			background: black;
+			font-family: "sans-serif";
+			color: #CCC;
+			font-size: 125%;
+		}
+
+		body, a { color: #CCC; }
+		
+		#splashcontainer {
+			position: absolute;
+			left: 50%;
+		}
+
+		#splash {
+			position: relative;
+			left: -50%;
+			background: black;
+			border: #ccc 3px solid;
+			width: 800px;
+			height: 300px;
+			margin-right: 10px;
+			padding: 0px 20px;
+			margin-top: 150px;
+		}
+
+		#closebutton {
+			display: block;
+			margin: 0px auto;
+			text-align: center;
+			width: 100px;
+			border: 2px solid gray;
+			text-decoration: none;
+			margin-top: 32px;
+		}
+
+		#closebutton:hover {
+			background: gray;
+			border: 2px solid #CCC;
+		}
+
+		html, body, #container, #drawregion {
+			display: block;
+			margin: 0px;
+			width: 100%;
+			height: 100%;
+		}
+
+		#drawregion {
+		}
+	</style>
+
+	<script>
+		var DEBUG = false;
+
+		function onPageLoad() {
+			if (DEBUG) { closeSplash(); }
+
+			loadDesigner();
+		}
+
+		function closeSplash() {
+			var splashcontainer = document.getElementById('splashcontainer');
+			splashcontainer.style.display = 'none';
+
+			var drawregion = document.getElementById('drawregion');
+			splashcontainer.focus();
+		}
+	</script>
+</head>
+<body onLoad="onPageLoad()">
+	<div id="splashcontainer">
+		<div id="splash">
+			<h1>Dwarf Fortress designer</h1>
+			<p>This is a web-based fortress designation tool for <a href="http://www.bay12games.com/dwarves/" target="_blank">Dwarf Fortress</a>. You may use it to experiment with different plans which will create the basic outline of your Fortress. You can then optionally export your design to QuickFort.</p>
+			<p>If you're not already familiar with the controls of Dwarf Fortress, you're going to have a bad time.</p>
+			<a id="closebutton" href="#" onClick="closeSplash()">Begin</a>
+		</div>
+	</div>
+	<canvas id="drawregion" tabindex="1">
+	Your browser does not support the HTML5 canvas tag.
+	</canvas>
+
+</body>
+</html>
+

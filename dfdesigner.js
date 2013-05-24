@@ -8,15 +8,14 @@
 // y = north to south direction (0 = north, map_size_y = south)
 var map;
 var map_background; // for bg1 and bg2 and bg3
-var map_temp; // TODO: Fill and render this, for displaying the current mouse operation
+var map_temp; // TODO: Fill and render this, for displaying the current mouse operation (future feature)
 
 // SETTINGS //
-// SETTINGS //
-// SETTINGS //
-var menu_width_tiles = 25; // makes the right side menu wider or smaller. its width is defined in a number of tiles (of size tile_size). You probably don't want to change this.
+var menu_width_tiles = 23; // makes the right side menu wider or smaller. its width is defined in a number of tiles (of size tile_size). You probably don't want to change this.
 // END OF SETTINGS //
-// END OF SETTINGS //
-// END OF SETTINGS //
+
+// tiles
+var tile_size = 16; // in pixels
 
 // the current viewport (eg browser)
 var viewport_elementid = "drawregion";
@@ -24,18 +23,18 @@ var container_elementid = "container";
 var viewport_width = 800;
 var viewport_height = 600;
 
+var viewport_height_tiles = Math.floor(viewport_height / tile_size) - 1;
+var viewport_width_tiles = Math.floor(viewport_width / tile_size) - 1;
+
 // size of the map, set to arbitrary defaults which are almost immediately overriden
 var map_size_z = 40;
-var map_size_x = 50;
-var map_size_y = 50;
+var map_size_x = 200;
+var map_size_y = 200;
 
 // current camera position
 var camera_z = 19;
 var camera_x = 0; // TODO: Implement a camera_x and camera_y which are not zero. I need to do this quickly or else I will have too much faulty assumptions in my code based on camera_N = 0;
 var camera_y = 0;
-
-// tiles
-var tile_size = 16; // in pixels
 
 // these go into map[][][]
 var tile_types = { // TODO: Add the rest of the possible types of designations
@@ -228,8 +227,11 @@ function setCanvasSize() {
     drawregion.width = viewport_width;
     drawregion.height = viewport_height;
 
-    map_size_x = Math.floor(viewport_width / tile_size);
-    map_size_y = Math.floor(viewport_height / tile_size);
+    viewport_height_tiles = Math.floor(viewport_height / tile_size) - 1;
+    viewport_width_tiles = Math.floor(viewport_width / tile_size) - 1;
+
+    //map_size_x = Math.floor(viewport_width / tile_size);
+    //map_size_y = Math.floor(viewport_height / tile_size);
 
     logmessage("map size (z, x, y): " + map_size_z.toString() + ", " + map_size_x.toString() + ", " + map_size_y.toString());
 }
@@ -257,40 +259,28 @@ function attachUIEvents() {
 
         switch (evt.keyCode) {
             case 28: // escape
-                // menu up
-
+                // menu up (or close notices etc.)
+                break;
             case 39: // right arrow
-                cursor_x += step;
-                cursor_x = Math.min(cursor_x, map_size_x - 1);
+                moveCursor(camera_z, Math.min(cursor_x + step, map_size_x - 1), cursor_y);
                 break;
-
             case 37: // left arrow
-                cursor_x -= step;
-                cursor_x = Math.max(cursor_x, 0);
+                moveCursor(camera_z, Math.max(cursor_x - step, 0), cursor_y);
                 break;
-
             case 38: // up arrow
-                cursor_y -= step;
-                cursor_y = Math.max(cursor_y, 0);
+                moveCursor(camera_z, cursor_x, Math.max(cursor_y - step, 0));
                 break;
-
             case 40: // down arror
-                cursor_y += step;
-                cursor_y = Math.min(cursor_y, map_size_y - 1)
+                moveCursor(camera_z, cursor_x, Math.min(cursor_y + step, map_size_y - 1));
                 break;
-
             case 33: // page up
 			case 188: // .
-                camera_z += 1;
-                camera_z = Math.min(camera_z, map_size_z - 1);
+                moveCursor(Math.min(camera_z + 1, map_size_z - 1), camera_x, camera_y);
                 break;
-
 			case 34: // page down
             case 190: // ,
-                camera_z -= 1;
-                camera_z = Math.max(camera_z, 0);
+                moveCursor(Math.max(camera_z - 1, map_size_z - 1), camera_x, camera_y);
                 break;
-
 			case 13: // enter
                 if (cursor_tool.type == tool_type_area) {
 
@@ -333,7 +323,7 @@ function attachUIEvents() {
 				break;
         }
 
-        // Check if any of the current tools have the pushed key set as the hotkey
+        // Check if any of the tools have the currently pushed key set as the hotkey
         for(var tool in tools) {
             tool = tools[tool];
             if (evt.keyCode == tool.keycode) {
@@ -358,8 +348,9 @@ function attachUIEvents() {
         var tile_x = Math.floor(x / tile_size) - 1; // minus 1 because of the chrome
         var tile_y = Math.floor(y / tile_size) - 1;
 
-        cursor_x = tile_x;
-        cursor_y = tile_y;
+        moveCursor(camera_z, tile_x + camera_x, tile_y + camera_y);
+
+        // TODO: Check if mouse click is inside the menu (and select the proper menu item)
 
         if (cursor_tool.type == tool_type_area) {
             cursor_start_x = cursor_x;
@@ -370,7 +361,6 @@ function attachUIEvents() {
         }
 
         logmessage("starting mouse select");
-
     };
 
     drawregion.onmousemove = function(evt) {
@@ -382,8 +372,7 @@ function attachUIEvents() {
         var tile_x = Math.floor(x / tile_size) - 1; // minus 1 because of the chrome
         var tile_y = Math.floor(y / tile_size) - 1;
 
-        cursor_x = tile_x;
-        cursor_y = tile_y;
+        moveCursor(camera_z, tile_x + camera_x, tile_y + camera_y);
     };
 
     drawregion.onmouseup = function(evt) {
@@ -411,6 +400,44 @@ function attachUIEvents() {
     // TODO: Functionality for scroll wheel. What makes sense? Menu item switch or z-level change or ...?
 
     // TODO: Right mouse does nothing, what can I make it do?
+}
+
+function moveCursor(z, x, y) {
+    if (camera_z == z && cursor_x == x && cursor_y == y) { return; }
+
+    camera_z = Math.min(Math.max(z, 0), map_size_z - 1);
+    cursor_x = Math.min(Math.max(x, 0), map_size_x - 1);
+    cursor_y = Math.min(Math.max(y, 0), map_size_y - 1);
+
+    // 
+    var camera_step = 10;
+
+    var rel_x = cursor_x - camera_x;
+    var rel_y = cursor_y - camera_y;
+
+    var diff_x = rel_x - viewport_width_tiles + menu_width_tiles - 1;
+    var diff_y = rel_y - viewport_height_tiles;
+
+    // Check camera up
+    if (rel_y < 3) {
+        camera_y = Math.max(0, camera_y - camera_step);
+    }
+
+    // Check camera down
+    if (diff_y > -5) {
+        camera_y = Math.min(map_size_y, camera_y + camera_step);
+    }
+
+    // Check camera left
+    if (rel_x < 3) {
+        camera_x = Math.max(0, camera_x - camera_step);
+    }
+
+    if (diff_x > -5) {
+        camera_x = Math.min(map_size_x, camera_x + camera_step);
+    }
+
+    // Check camera right
 }
 
 function startDrawLoop() {
@@ -477,14 +504,19 @@ function draw() {
     var drawregion = document.getElementById(viewport_elementid);
     var context = drawregion.getContext("2d");
 
+    drawregion.focus();
+
     // fill with black
     context.fillStyle="black";
     context.fillRect(0, 0, viewport_width, viewport_height);
 
-    // render current z-level
-    var max_render_x = map_size_x - menu_width_tiles; // TODO: Repair wrong assumption, map can be larger than screen
-    var max_render_y = map_size_y; // TODO: Repair wrong assumption, map can be larger than screen
+    
+    // calculations to aid drawing process
+    // TODO: Do not render more than is necessary
+    var max_render_x = map_size_x; //Math.min(map_size_x, viewport_width_tiles - menu_width_tiles); <-- this doesnt work
+    var max_render_y = map_size_y;
 
+    // render current z-level
     for (x = camera_x; x < max_render_x; x += 1) {
         for (y = camera_y; y < max_render_y; y += 1) {
 
@@ -512,44 +544,48 @@ function draw() {
     if (cursor_down && camera_z == cursor_start_z) {
         cursor_blink = !cursor_blink;
         if (cursor_blink) {
-            context.drawImage(images.cursor_blink, (cursor_start_x + 1) * 16, (cursor_start_y + 1) * 16, tile_size, tile_size);
+            context.drawImage(images.cursor_blink, (cursor_start_x - camera_x + 1) * 16, (cursor_start_y - camera_y + 1) * 16, tile_size, tile_size);
         }
     }
 	
 	// render cursor
-	context.drawImage(images.cursor, (cursor_x + 1) * 16, (cursor_y + 1) * 16, tile_size, tile_size);
+	context.drawImage(images.cursor, (cursor_x - camera_x + 1) * 16, (cursor_y - camera_y + 1) * 16, tile_size, tile_size);
+
+    // clear space for menu
+
+    var menu_bar = Math.floor(viewport_width / tile_size) - menu_width_tiles;
+
+    context.fillStyle="black";
+    context.fillRect(menu_bar * tile_size, 0, viewport_width, viewport_height);
+
 
     // render chrome
     var chrome = images.chrome;
 
     // top bar
-    var pos_y = 0;
-    for (x = 0; x < map_size_x; x += 1) {
-        context.drawImage(chrome, x * 16, pos_y * 16, tile_size, tile_size);
+    for (x = 0; x < viewport_width_tiles; x += 1) {
+        context.drawImage(chrome, x * 16, 0, tile_size, tile_size);
     }
 
     // bottom bar
-    var pos_y = Math.floor(viewport_height / tile_size) - 1;
-    for (x = 0; x < map_size_x; x += 1) {
-        context.drawImage(chrome, x * 16, pos_y * 16, tile_size, tile_size);
+    for (x = 0; x < viewport_width_tiles; x += 1) {
+        context.drawImage(chrome, x * 16, viewport_height_tiles * 16, tile_size, tile_size);
     }
 
     // left bar
-    var pos_x = 0;
-    for (y = 0; y < map_size_y; y += 1) {
-        context.drawImage(chrome, pos_x * 16, y * 16, tile_size, tile_size);
+    for (y = 0; y < viewport_height_tiles; y += 1) {
+        context.drawImage(chrome, 0, y * 16, tile_size, tile_size);
     }
 
     // right bar
-    var pos_x = Math.floor(viewport_width / tile_size) - 1;
-    for (y = 0; y < map_size_y; y += 1) {
-        context.drawImage(chrome, pos_x * 16, y * 16, tile_size, tile_size);
+    for (y = 0; y < viewport_height_tiles + 1; y += 1) {
+        context.drawImage(chrome, viewport_width_tiles * 16, y * 16, tile_size, tile_size);
     }
 
     // middle bar ( for menu )
-    var pos_x = Math.floor(viewport_width / tile_size) - menu_width_tiles;
-    for (y = 0; y < map_size_y; y += 1) {
-        context.drawImage(chrome, pos_x * 16, y * 16, tile_size, tile_size);
+    
+    for (y = 0; y < viewport_height_tiles; y += 1) {
+        context.drawImage(chrome, menu_bar * 16, y * 16, tile_size, tile_size);
     }
 
     // paint current z-level in top right
@@ -565,7 +601,7 @@ function draw() {
 
     // draw menu
 
-    pos_x = (pos_x + 2) * 16; // lol what is this
+    pos_x = (menu_bar + 2) * 16; // lol what is this
     pos_y = tile_size * 4;
 
     var n = 0;

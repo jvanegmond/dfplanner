@@ -221,8 +221,8 @@ function loadTools() {
 function setCanvasSize() {
     var drawregion = document.getElementById(viewport_elementid);
 
-    viewport_width = document.width;
-    viewport_height = document.height;
+    viewport_width = document.body.clientWidth;
+    viewport_height = document.body.clientHeight;
 
     drawregion.width = viewport_width;
     drawregion.height = viewport_height;
@@ -234,6 +234,7 @@ function setCanvasSize() {
     //map_size_y = Math.floor(viewport_height / tile_size);
 
     logmessage("map size (z, x, y): " + map_size_z.toString() + ", " + map_size_x.toString() + ", " + map_size_y.toString());
+    logmessage("viewport size (w, h): " + viewport_width.toString() + ", " + viewport_height.toString());
 }
 
 function attachUIEvents() {
@@ -242,7 +243,8 @@ function attachUIEvents() {
     drawregion.onkeydown = function(evt) {
         evt = evt || window.event;
 
-        // NOTE: There is no concept of a key being "handled". All key binds have a unique action to them due to the limited scope of the project.
+        // Indicates or not whether this keypress is handled. Supresses default browser behavior.
+        var handled = false;
 
         //logmessage("Key pressed: " + evt.keyCode);
 
@@ -263,23 +265,35 @@ function attachUIEvents() {
                 break;
             case 39: // right arrow
                 moveCursor(camera_z, Math.min(cursor_x + step, map_size_x - 1), cursor_y);
+
+                handled = true;
                 break;
             case 37: // left arrow
                 moveCursor(camera_z, Math.max(cursor_x - step, 0), cursor_y);
+
+                handled = true;
                 break;
             case 38: // up arrow
                 moveCursor(camera_z, cursor_x, Math.max(cursor_y - step, 0));
+
+                handled = true;
                 break;
             case 40: // down arror
                 moveCursor(camera_z, cursor_x, Math.min(cursor_y + step, map_size_y - 1));
+
+                handled = true;
                 break;
             case 33: // page up
 			case 188: // .
                 moveCursor(Math.min(camera_z + 1, map_size_z - 1), camera_x, camera_y);
+
+                handled = true;
                 break;
 			case 34: // page down
             case 190: // ,
                 moveCursor(Math.max(camera_z - 1, map_size_z - 1), camera_x, camera_y);
+
+                handled = true;
                 break;
 			case 13: // enter
                 if (cursor_tool.type == tool_type_area) {
@@ -320,6 +334,8 @@ function attachUIEvents() {
                     cursor_tool.run(start_z, start_z, start_x, start_x, start_y, start_y);
 
                 }
+
+                handled = true;
 				break;
         }
 
@@ -334,34 +350,44 @@ function attachUIEvents() {
                 if (cursor_tool.type == tool_type_point) {
                     cursor_down = false;
                 }
+
+                handled = true;
             }
         }
 
-        draw(); // extra draw for that snappy response times
+        if (handled) {
+            draw(); // extra draw for that snappy response times
+            return false; // suppress default behavior
+        } else {
+            return true;
+        }
     }
 
     drawregion.onmousedown = function(evt) {
         var x = evt.clientX;
         var y = evt.clientY;
 
-        // TODO: Make function out of this
-        var tile_x = Math.floor(x / tile_size) - 1; // minus 1 because of the chrome
-        var tile_y = Math.floor(y / tile_size) - 1;
+        handle_onMouseDown(x, y);
 
-        moveCursor(camera_z, tile_x + camera_x, tile_y + camera_y);
+        return false; // prevents the default behavior
+    };
 
-        // TODO: Check if mouse click is inside the menu (and select the proper menu item)
+    drawregion.addEventListener('touchstart', function(evt) {
+        // If there's exactly one finger inside this element
+        if (evt.targetTouches.length == 1) {
+            var touch = evt.targetTouches[0];
+            // Place element where the finger is
+            var x = touch.pageX;
+            var y = touch.pageY;
 
-        if (cursor_tool.type == tool_type_area) {
-            cursor_start_x = cursor_x;
-            cursor_start_y = cursor_y;
-            cursor_start_z = camera_z;
+            logmessage("touch down");
 
-            cursor_down = true;
+            handle_onMouseDown(x, y);
         }
 
-        logmessage("starting mouse select");
-    };
+        evt.preventDefault();
+        return false;
+    });
 
     drawregion.onmousemove = function(evt) {
         // TODO: Ignore small pixel movements (accidental mouse bumps)
@@ -369,37 +395,99 @@ function attachUIEvents() {
         var x = evt.clientX;
         var y = evt.clientY;
 
-        var tile_x = Math.floor(x / tile_size) - 1; // minus 1 because of the chrome
-        var tile_y = Math.floor(y / tile_size) - 1;
+        handle_onMouseMove(x, y);
 
-        moveCursor(camera_z, tile_x + camera_x, tile_y + camera_y);
+        return false; // prevents the default behavior. Fixes problem with cursor changes and broken mouse functionality.
     };
+
+    drawregion.addEventListener('touchmove', function(evt) {
+        // If there's exactly one finger inside this element
+        if (evt.targetTouches.length == 1) {
+            var touch = evt.targetTouches[0];
+            // Place element where the finger is
+            var x = touch.pageX;
+            var y = touch.pageY;
+
+            handle_onMouseMove(x, y);
+        }
+
+        evt.preventDefault();
+        return false;
+    });
+
 
     drawregion.onmouseup = function(evt) {
         cursor_down = false;
 
-        // TODO: Make it possible to click the menu items
-        
-        // TODO: Make function out of this (shared with keyboard)
-        var start_z = camera_z;
-        var start_x = cursor_x;
-        var start_y = cursor_y;
-        var end_z = cursor_start_z;
-        var end_x = cursor_start_x;
-        var end_y = cursor_start_y;
-        
-        if (start_x > end_x) { end_x = start_x; start_x = cursor_start_x; }
-        if (start_y > end_y) { end_y = start_y; start_y = cursor_start_y; }
-        if (start_z > end_z) { end_z = start_z; start_z = cursor_start_z; }
-        
-        cursor_tool.run(start_z, end_z, start_x, end_x, start_y, end_y);
+        handle_onMouseUp();
 
-        logmessage("ending mouse select");
+        return false; // prevents the default behavior
     };
+
+    drawregion.addEventListener('touchend', function(evt) {
+        // If there's exactly one finger inside this element
+        if (evt.targetTouches.length == 0) {
+            logmessage("touch up");
+
+            handle_onMouseUp();
+        }
+
+        evt.preventDefault();
+        return false;
+    });
 
     // TODO: Functionality for scroll wheel. What makes sense? Menu item switch or z-level change or ...?
 
     // TODO: Right mouse does nothing, what can I make it do?
+}
+
+function handle_onMouseDown(x, y) {
+    logmessage("starting select");
+    // TODO: Make function out of this
+    var tile_x = Math.floor(x / tile_size) - 1; // minus 1 because of the chrome
+    var tile_y = Math.floor(y / tile_size) - 1;
+
+    moveCursor(camera_z, tile_x + camera_x, tile_y + camera_y);
+
+    // TODO: Check if mouse click is inside the menu (and select the proper menu item)
+
+    if (cursor_tool.type == tool_type_area) {
+        cursor_start_x = cursor_x;
+        cursor_start_y = cursor_y;
+        cursor_start_z = camera_z;
+
+        cursor_down = true;
+    }
+}
+
+function handle_onMouseUp() {
+    logmessage("ending select");
+
+    // TODO: Make it possible to click the menu items
+    
+    // TODO: Make function out of this (shared with keyboard)
+    var start_z = camera_z;
+    var start_x = cursor_x;
+    var start_y = cursor_y;
+    var end_z = cursor_start_z;
+    var end_x = cursor_start_x;
+    var end_y = cursor_start_y;
+    
+    if (start_x > end_x) { end_x = start_x; start_x = cursor_start_x; }
+    if (start_y > end_y) { end_y = start_y; start_y = cursor_start_y; }
+    if (start_z > end_z) { end_z = start_z; start_z = cursor_start_z; }
+
+    cursor_down = false;
+    
+    cursor_tool.run(start_z, end_z, start_x, end_x, start_y, end_y);
+}
+
+function handle_onMouseMove(x, y) {
+    var tile_x = Math.floor(x / tile_size) - 1; // minus 1 because of the chrome
+    var tile_y = Math.floor(y / tile_size) - 1;
+
+    moveCursor(camera_z, tile_x + camera_x, tile_y + camera_y);
+
 }
 
 function moveCursor(z, x, y) {
@@ -504,8 +592,6 @@ function draw() {
     var drawregion = document.getElementById(viewport_elementid);
     var context = drawregion.getContext("2d");
 
-    drawregion.focus();
-
     // fill with black
     context.fillStyle="black";
     context.fillRect(0, 0, viewport_width, viewport_height);
@@ -513,8 +599,8 @@ function draw() {
     
     // calculations to aid drawing process
     // TODO: Do not render more than is necessary
-    var max_render_x = map_size_x; //Math.min(map_size_x, viewport_width_tiles - menu_width_tiles); <-- this doesnt work
-    var max_render_y = map_size_y;
+    var max_render_x = Math.min(camera_x + viewport_width_tiles, map_size_x);
+    var max_render_y = Math.min(camera_y + viewport_height_tiles, map_size_y);
 
     // render current z-level
     for (x = camera_x; x < max_render_x; x += 1) {
@@ -620,7 +706,6 @@ function draw() {
 
         n += 1;
     }
-    // logmessage("end draw"); // can use for some mediocre performance testing
 }
 
 function isEmptyTile(tile_type) {

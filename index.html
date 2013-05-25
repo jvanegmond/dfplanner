@@ -8,25 +8,25 @@
 			font-family: "sans-serif";
 			color: #CCC;
 			font-size: 125%;
+			width: 100%;
+			min-width: 800px;
+			min-height: 500px;
+			overflow: hidden;
 		}
 
 		body, a { color: #CCC; }
-		
-		#splashcontainer {
-			position: absolute;
-			left: 50%;
-		}
 
 		#splash {
-			position: relative;
-			left: -50%;
+			position: fixed;
+			left: 50%;
+			margin-left: -430px;
+			margin-top: 50px;
+
+			display: block;
 			background: black;
 			border: #ccc 3px solid;
-			width: 800px;
-			height: 300px;
-			margin-right: 10px;
+			width: 780px;
 			padding: 0px 20px;
-			margin-top: 150px;
 		}
 
 		#closebutton {
@@ -52,11 +52,12 @@
 		}
 
 		#drawregion {
+			position: fixed;
 		}
 	</style>
 
 	<script>
-		var DEBUG = true;
+		var DEBUG = false;
 
 		function onPageLoad() {
 			if (DEBUG) { closeSplash(); }
@@ -65,26 +66,27 @@
 		}
 
 		function closeSplash() {
-			var splashcontainer = document.getElementById('splashcontainer');
+			var splashcontainer = document.getElementById('splash');
 			splashcontainer.style.display = 'none';
 
 			var drawregion = document.getElementById('drawregion');
-			splashcontainer.focus();
+			drawregion.focus();
 		}
 	</script>
 </head>
 <body onLoad="onPageLoad()">
-	<div id="splashcontainer">
-		<div id="splash">
-			<h1>Dwarf Fortress designer</h1>
-			<p>This is a web-based fortress designation tool for <a href="http://www.bay12games.com/dwarves/" target="_blank">Dwarf Fortress</a>. You may use it to experiment with different plans which will create the basic outline of your Fortress. You can then optionally export your design to QuickFort.</p>
-			<p>If you're not already familiar with the controls of Dwarf Fortress, you're going to have a bad time.</p>
-			<a id="closebutton" href="#" onClick="closeSplash()">Begin</a>
-		</div>
-	</div>
+
 	<canvas id="drawregion" tabindex="1">
 	Your browser does not support the HTML5 canvas tag.
 	</canvas>
+
+	<div id="splash">
+		<h1><a href="https://github.com/Manadar24/Quickfort_Planner" target="_blank">Quickfort Planner</a></h1>
+		<p>This is a web-based fortress designation tool for <a href="http://www.bay12games.com/dwarves/" target="_blank">Dwarf Fortress</a>. You may use it to experiment with different plans which will create the basic outline of your Fortress. You can then optionally export your design to QuickFort.</p>
+		<p>If you're not already familiar with the controls of Dwarf Fortress, you're going to have a bad time.</p>
+		<a id="closebutton" href="#" onClick="closeSplash()">Begin</a>
+		<br style="clear: both" />
+	</div>
 
 </body>
 </html>

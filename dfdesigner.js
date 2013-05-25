@@ -86,11 +86,11 @@ var text_font = "12pt sans-serif";
 function loadDesigner() {
     logmessage("loading designer");
 
-    setCanvasSize();
+    setCanvasSize(true);
     loadTools();
 
     window.onresize = function(event) {
-        setCanvasSize();
+        setCanvasSize(false);
     }
 
     logmessage("loading images");
@@ -98,9 +98,6 @@ function loadDesigner() {
 
     logmessage("creating world");
     createWorld();
-
-    logmessage("attaching UI events");
-    attachUIEvents();
 
     logmessage("starting renderer");
     startDrawLoop();
@@ -218,7 +215,7 @@ function loadTools() {
     cursor_tool = tools.dig;
 }
 
-function setCanvasSize() {
+function setCanvasSize(set_world_size) {
     var drawregion = document.getElementById(viewport_elementid);
 
     viewport_width = document.body.clientWidth;
@@ -230,14 +227,23 @@ function setCanvasSize() {
     viewport_height_tiles = Math.floor(viewport_height / tile_size) - 1;
     viewport_width_tiles = Math.floor(viewport_width / tile_size) - 1;
 
-    //map_size_x = Math.floor(viewport_width / tile_size);
-    //map_size_y = Math.floor(viewport_height / tile_size);
+    if (set_world_size) {
+        var map_size_x_min = 100;
+        var map_size_y_min = 60;
 
-    logmessage("map size (z, x, y): " + map_size_z.toString() + ", " + map_size_x.toString() + ", " + map_size_y.toString());
+        map_size_x = Math.max(viewport_width_tiles - menu_width_tiles, map_size_x_min);
+        map_size_y = Math.max(map_size_y_min, Math.floor(viewport_height / tile_size));
+        logmessage("map size (z, x, y): " + map_size_z.toString() + ", " + map_size_x.toString() + ", " + map_size_y.toString());
+
+        // TODO: Set the camera to the middle or the bottom right of the screen
+    }    
+
     logmessage("viewport size (w, h): " + viewport_width.toString() + ", " + viewport_height.toString());
 }
 
-function attachUIEvents() {
+function enableDesigner() {
+    logmessage("attaching UI events");
+
     var drawregion = document.getElementById(viewport_elementid);
 
     drawregion.onkeydown = function(evt) {
@@ -391,7 +397,6 @@ function attachUIEvents() {
 
     drawregion.onmousemove = function(evt) {
         // TODO: Ignore small pixel movements (accidental mouse bumps)
-
         var x = evt.clientX;
         var y = evt.clientY;
 
@@ -417,19 +422,25 @@ function attachUIEvents() {
 
 
     drawregion.onmouseup = function(evt) {
-        cursor_down = false;
+        var x = evt.clientX;
+        var y = evt.clientY;
 
-        handle_onMouseUp();
+        handle_onMouseUp(x, y);
 
         return false; // prevents the default behavior
     };
 
     drawregion.addEventListener('touchend', function(evt) {
         // If there's exactly one finger inside this element
-        if (evt.targetTouches.length == 0) {
+        if (evt.changedTouches.length > 0) {
+            var touch = evt.changedTouches[0];
+            // Place element where the finger is
+            var x = touch.pageX;
+            var y = touch.pageY;
+
             logmessage("touch up");
 
-            handle_onMouseUp();
+            handle_onMouseUp(x, y);
         }
 
         evt.preventDefault();
@@ -442,7 +453,12 @@ function attachUIEvents() {
 }
 
 function handle_onMouseDown(x, y) {
+    var menu_border = (1 + viewport_width_tiles - menu_width_tiles) * tile_size;
+
+    if (x > menu_border) { return; }
+
     logmessage("starting select");
+
     // TODO: Make function out of this
     var tile_x = Math.floor(x / tile_size) - 1; // minus 1 because of the chrome
     var tile_y = Math.floor(y / tile_size) - 1;
@@ -460,11 +476,54 @@ function handle_onMouseDown(x, y) {
     }
 }
 
-function handle_onMouseUp() {
+function handle_onMouseUp(x, y) {
+    // TODO: Make it possible to click the menu items
+
+    var menu_border = (1 + viewport_width_tiles - menu_width_tiles) * tile_size;
+
+    if (x > menu_border) {
+        // ending a drag in the menu border should still work
+        if (cursor_down) {
+            handle_endDrag();
+        } else {
+            // clicked a menu item
+            logmessage("clicked in menu");
+
+            // the menu items start at: tile_size * 4 and are then evenly spaced apart by text_line_height pixels
+            var menu_start = tile_size * 4;
+
+            var menu_index = Math.round((y - menu_start) / text_line_height);
+
+            logmessage("index: " + menu_index.toString());
+            
+            if (menu_index >= 0) {
+
+                var n = 0;
+                for (var tool in tools)
+                {
+                    tool = tools[tool];
+                    if (n == menu_index) {
+                        cursor_tool = tool;
+
+                        logmessage("selected tool: " + cursor_tool.name);
+
+                        if (cursor_tool.type == tool_type_point) {
+                            cursor_down = false;
+                        }
+                    }
+                    n += 1;
+                }
+            }
+
+        }
+    } else {
+        handle_endDrag();
+    }
+}
+
+function handle_endDrag() {
     logmessage("ending select");
 
-    // TODO: Make it possible to click the menu items
-    
     // TODO: Make function out of this (shared with keyboard)
     var start_z = camera_z;
     var start_x = cursor_x;
@@ -487,7 +546,6 @@ function handle_onMouseMove(x, y) {
     var tile_y = Math.floor(y / tile_size) - 1;
 
     moveCursor(camera_z, tile_x + camera_x, tile_y + camera_y);
-
 }
 
 function moveCursor(z, x, y) {
@@ -506,6 +564,9 @@ function moveCursor(z, x, y) {
     var diff_x = rel_x - viewport_width_tiles + menu_width_tiles - 1;
     var diff_y = rel_y - viewport_height_tiles;
 
+
+    // idk why this works but it does
+
     // Check camera up
     if (rel_y < 3) {
         camera_y = Math.max(0, camera_y - camera_step);
@@ -521,11 +582,11 @@ function moveCursor(z, x, y) {
         camera_x = Math.max(0, camera_x - camera_step);
     }
 
+    // Check camera right
     if (diff_x > -5) {
         camera_x = Math.min(map_size_x, camera_x + camera_step);
     }
-
-    // Check camera right
+    
 }
 
 function startDrawLoop() {

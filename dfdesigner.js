@@ -2,13 +2,18 @@
 // Jos van Egmond / info@josvanegmond.nl / @manadar
 
 
+// Big todo's before initial release:
+// - Tool to create circles
+// - Add the remaining designation types
+// - Finish export to quickfort functionality
+
+
 // map is a 3d array which can be accessed in this way: map[z][x][y]
 // z = elevation, top to bottom (0 = top, map_size_z = bottom)
 // x = west to east (0 = north, map_size_x = east)
 // y = north to south direction (0 = north, map_size_y = south)
 var map;
 var map_background; // for bg1 and bg2 and bg3
-var map_temp; // TODO: Fill and render this, for displaying the current mouse operation (future feature)
 
 // SETTINGS //
 var menu_width_tiles = 23; // makes the right side menu wider or smaller. its width is defined in a number of tiles (of size tile_size). You probably don't want to change this.
@@ -26,6 +31,8 @@ var viewport_height = 600;
 var viewport_height_tiles = Math.floor(viewport_height / tile_size) - 1;
 var viewport_width_tiles = Math.floor(viewport_width / tile_size) - 1;
 
+var fps = 15;
+
 // size of the map, set to arbitrary defaults which are almost immediately overriden
 var map_size_z = 40;
 var map_size_x = 200;
@@ -33,7 +40,7 @@ var map_size_y = 200;
 
 // current camera position
 var camera_z = 19;
-var camera_x = 0; // TODO: Implement a camera_x and camera_y which are not zero. I need to do this quickly or else I will have too much faulty assumptions in my code based on camera_N = 0;
+var camera_x = 0;
 var camera_y = 0;
 
 // these go into map[][][]
@@ -115,8 +122,9 @@ function loadTools() {
         name: "Dig",
         type: tool_type_area,
         hotkey: "d", 
+        preview: true,
         keycode: 68,
-        run: function(start_z, end_z, start_x, end_x, start_y, end_y) {
+        run: function(map, start_z, end_z, start_x, end_x, start_y, end_y) {
             for (z = start_z; z <= end_z; z += 1) {
                 for (x = start_x; x <= end_x; x += 1) {
                     for (y = start_y; y <= end_y; y += 1) {
@@ -132,8 +140,9 @@ function loadTools() {
         name: "Up/Down Stairway",
         type: tool_type_area,
         hotkey: "i",
+        preview: true,
         keycode: 73,
-        run: function(start_z, end_z, start_x, end_x, start_y, end_y) {
+        run: function(map, start_z, end_z, start_x, end_x, start_y, end_y) {
             for (z = start_z; z <= end_z; z += 1) {
                 for (x = start_x; x <= end_x; x += 1) {
                     for (y = start_y; y <= end_y; y += 1) {
@@ -149,8 +158,9 @@ function loadTools() {
         name: "Remove designation",
         type: tool_type_area,
         hotkey: "x",
+        preview: true,
         keycode: 88,
-        run: function(start_z, end_z, start_x, end_x, start_y, end_y) {
+        run: function(map, start_z, end_z, start_x, end_x, start_y, end_y) {
             for (z = start_z; z <= end_z; z += 1) {
                 for (x = start_x; x <= end_x; x += 1) {
                     for (y = start_y; y <= end_y; y += 1) {
@@ -166,8 +176,9 @@ function loadTools() {
         name: "Clear selected z-level",
         type: tool_type_point,
         hotkey: "y",
+        preview: false,
         keycode: 89,
-        run: function(start_z, end_z, start_x, end_x, start_y, end_y) { // for a tool of type tool_type_point the start_N and end_N variables are guaranteed to be the same.
+        run: function(map, start_z, end_z, start_x, end_x, start_y, end_y) { // for a tool of type tool_type_point the start_N and end_N variables are guaranteed to be the same.
             for (x = 0; x <= map_size_x - 1; x += 1) {
                 for (y = 0; y <= map_size_y - 1; y += 1) {
                     map[camera_z][x][y] = tile_types.hidden;
@@ -181,8 +192,9 @@ function loadTools() {
         name: "Export to QuickFort (area select)",
         type: tool_type_area,
         hotkey: "q",
+        preview: false,
         keycode: 81,
-        run: function(start_z, end_z, start_x, end_x, start_y, end_y) {
+        run: function(map, start_z, end_z, start_x, end_x, start_y, end_y) {
             var exportmap = { // TODO: add more designation types
                 dig: 'd',
                 stairs_updown: 'i'
@@ -232,7 +244,7 @@ function setCanvasSize(set_world_size) {
         var map_size_y_min = 60;
 
         map_size_x = Math.max(viewport_width_tiles - menu_width_tiles, map_size_x_min);
-        map_size_y = Math.max(map_size_y_min, Math.floor(viewport_height / tile_size));
+        map_size_y = map_size_x; //Math.max(map_size_y_min, Math.floor(viewport_height / tile_size));
         logmessage("map size (z, x, y): " + map_size_z.toString() + ", " + map_size_x.toString() + ", " + map_size_y.toString());
 
         // TODO: Set the camera to the middle or the bottom right of the screen
@@ -290,14 +302,14 @@ function enableDesigner() {
                 handled = true;
                 break;
             case 33: // page up
-			case 188: // .
-                moveCursor(Math.min(camera_z + 1, map_size_z - 1), camera_x, camera_y);
+			case 188: // ,
+                moveCursor(Math.min(camera_z + 1, map_size_z - 1), cursor_x, cursor_y);
 
                 handled = true;
                 break;
 			case 34: // page down
-            case 190: // ,
-                moveCursor(Math.max(camera_z - 1, map_size_z - 1), camera_x, camera_y);
+            case 190: // .
+                moveCursor(Math.max(camera_z - 1, 0), cursor_x, cursor_y);
 
                 handled = true;
                 break;
@@ -321,7 +333,7 @@ function enableDesigner() {
     					if (start_y > end_y) { end_y = start_y; start_y = cursor_start_y; }
                         if (start_z > end_z) { end_z = start_z; start_z = cursor_start_z; }
     					
-                        cursor_tool.run(start_z, end_z, start_x, end_x, start_y, end_y);
+                        cursor_tool.run(map, start_z, end_z, start_x, end_x, start_y, end_y);
     				} else {
     					logmessage("starting area select");
                         cursor_start_z = camera_z;
@@ -337,7 +349,7 @@ function enableDesigner() {
                     var start_x = cursor_x;
                     var start_y = cursor_y;
 
-                    cursor_tool.run(start_z, start_z, start_x, start_x, start_y, start_y);
+                    cursor_tool.run(map, start_z, start_z, start_x, start_x, start_y, start_y);
 
                 }
 
@@ -448,8 +460,6 @@ function enableDesigner() {
     });
 
     // TODO: Functionality for scroll wheel. What makes sense? Menu item switch or z-level change or ...?
-
-    // TODO: Right mouse does nothing, what can I make it do?
 }
 
 function handle_onMouseDown(x, y) {
@@ -465,8 +475,6 @@ function handle_onMouseDown(x, y) {
 
     moveCursor(camera_z, tile_x + camera_x, tile_y + camera_y);
 
-    // TODO: Check if mouse click is inside the menu (and select the proper menu item)
-
     if (cursor_tool.type == tool_type_area) {
         cursor_start_x = cursor_x;
         cursor_start_y = cursor_y;
@@ -477,8 +485,8 @@ function handle_onMouseDown(x, y) {
 }
 
 function handle_onMouseUp(x, y) {
-    // TODO: Make it possible to click the menu items
 
+    // Check if the mouse is clicked inside the menu
     var menu_border = (1 + viewport_width_tiles - menu_width_tiles) * tile_size;
 
     if (x > menu_border) {
@@ -538,7 +546,7 @@ function handle_endDrag() {
 
     cursor_down = false;
     
-    cursor_tool.run(start_z, end_z, start_x, end_x, start_y, end_y);
+    cursor_tool.run(map, start_z, end_z, start_x, end_x, start_y, end_y);
 }
 
 function handle_onMouseMove(x, y) {
@@ -563,7 +571,6 @@ function moveCursor(z, x, y) {
 
     var diff_x = rel_x - viewport_width_tiles + menu_width_tiles - 1;
     var diff_y = rel_y - viewport_height_tiles;
-
 
     // idk why this works but it does
 
@@ -594,7 +601,15 @@ function startDrawLoop() {
 
     setInterval(function() {
         draw();
+    }, 1000 / fps);
+
+    setInterval(function() {
+        tick();
     }, 100);
+}
+
+function tick() {
+    cursor_blink = !cursor_blink;
 }
 
 function loadImages() {
@@ -658,8 +673,7 @@ function draw() {
     context.fillRect(0, 0, viewport_width, viewport_height);
 
     
-    // calculations to aid drawing process
-    // TODO: Do not render more than is necessary
+    // calculations to aid drawing process this makes sure we don't render (much) more than is necessary
     var max_render_x = Math.min(camera_x + viewport_width_tiles, map_size_x);
     var max_render_y = Math.min(camera_y + viewport_height_tiles, map_size_y);
 
@@ -686,10 +700,68 @@ function draw() {
         }
     }
 
+    // render current tool preview
+    if (cursor_down && cursor_tool.preview) {
+        map_temp = [];
+
+        // initialize map as a series of arrays containing arrays
+        for (z = 0; z < map_size_z; z += 1) {
+            map_temp[z] = [];
+            for (x = 0; x < map_size_x; x += 1) {
+                map_temp[z][x] = [];
+                for (y = 0; y < map_size_y; y += 1) {
+                    map_temp[z][x][y] = 'herpaderpa';
+                }
+            }
+        }
+
+        // TODO: Make function out of this (shared with keyboard)
+        var start_z = camera_z;
+        var start_x = cursor_x;
+        var start_y = cursor_y;
+        var end_z = cursor_start_z;
+        var end_x = cursor_start_x;
+        var end_y = cursor_start_y;
+        
+        if (start_x > end_x) { end_x = start_x; start_x = cursor_start_x; }
+        if (start_y > end_y) { end_y = start_y; start_y = cursor_start_y; }
+        if (start_z > end_z) { end_z = start_z; start_z = cursor_start_z; }
+        
+        cursor_tool.run(map_temp, start_z, end_z, start_x, end_x, start_y, end_y);
+
+        context.fillStyle="black";
+
+        for (x = camera_x; x < max_render_x; x += 1) {
+            for (y = camera_y; y < max_render_y; y += 1) {
+
+                // only paint non-empty tiles
+                if (map_temp[camera_z][x][y] === 'herpaderpa') { continue; }
+
+                if (map_temp[camera_z][x][y] === tile_types.hidden) {
+                    var pos_x = 1 + x - camera_x;
+                    var pos_y = 1 + y - camera_y;
+
+                    context.fillRect(pos_x * 16, pos_y * 16, tile_size, tile_size);
+
+                    // hidden tiles have random backgrounds, paint those
+                    if (map_background[camera_z][x][y] !== undefined) {
+
+                        context.drawImage(images[map_background[camera_z][x][y]], pos_x * 16, pos_y * 16, tile_size, tile_size);
+                    }
+                } else {
+                    var pos_x = 1 + x - camera_x;
+                    var pos_y = 1 + y - camera_y;
+
+                    context.drawImage(images[map_temp[camera_z][x][y]], pos_x * 16, pos_y * 16, tile_size, tile_size);
+                }
+            }
+        }
+
+    }
+
 
     // render cursor blinking when its down
     if (cursor_down && camera_z == cursor_start_z) {
-        cursor_blink = !cursor_blink;
         if (cursor_blink) {
             context.drawImage(images.cursor_blink, (cursor_start_x - camera_x + 1) * 16, (cursor_start_y - camera_y + 1) * 16, tile_size, tile_size);
         }
@@ -748,7 +820,7 @@ function draw() {
 
     // draw menu
 
-    pos_x = (menu_bar + 2) * 16; // lol what is this
+    pos_x = (menu_bar + 2) * tile_size; // lol what is this
     pos_y = tile_size * 4;
 
     var n = 0;

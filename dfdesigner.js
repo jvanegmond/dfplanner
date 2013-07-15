@@ -6,7 +6,10 @@
 // - Tool to create circles
 // - Add the remaining designation types
 // - Finish export to quickfort functionality
+// - Camera moves only after you hold your mouse still on the edge for > ~.6 second.
 
+// Random ideas:
+// - Small indicator of size of selection: Format: XxY. Eg: 7x6
 
 // map is a 3d array which can be accessed in this way: map[z][x][y]
 // z = elevation, top to bottom (0 = top, map_size_z = bottom)
@@ -81,8 +84,10 @@ var cursor_blink = false; // indicates whether or not the start point of an area
 // create tools
 
 var tools = []; // tools array is populated using the loadTools() function
-var tool_type_area = "area"; // An area tool is a tool which takes 6 coordinates: start z, end z, start y, end y, start x, end x
-var tool_type_point = "point"; // A point tool is a tool which takes 3 coordinates: z, y, x
+var tool_type_level = 0; // A level tool is a tool which works on an entire z-level. For example: Clear this z-level
+var tool_type_area_square = 1; // An area tool which makes a square shape. This type of tool accepts 2 points. For example: The dig tool.
+var tool_type_point = 2; // A point tool is a tool which takes 1 point. No tools use this yet, but buildings might use this in the future. For example, a chair tool.
+var tool_type_area_circle = 3; // An area tool which makes a circle shape. This type of tool accepts 1 point (center) and a radius. For example: The dig tool.
 
 // text properties
 var text_line_height = 22;
@@ -120,104 +125,93 @@ function loadTools() {
     // Dig designation tool
     tools.dig = {
         name: "Dig",
-        type: tool_type_area,
+        type: tool_type_area_square | tool_type_area_circle,
         hotkey: "d", 
         preview: true,
         keycode: 68,
-        run: function(map, start_z, end_z, start_x, end_x, start_y, end_y) {
-            for (z = start_z; z <= end_z; z += 1) {
-                for (x = start_x; x <= end_x; x += 1) {
-                    for (y = start_y; y <= end_y; y += 1) {
-                        map[z][x][y] = tile_types.dig;
-                    }
-                }
-            }
+        run: function(map, tool_selector) {
+            tool_selector(function(x,y,z) {
+                map[z][x][y] = tile_types.dig;
+            });
         }
     };
 
     // Up/Down stairs designation tool
     tools.updownstairs = {
         name: "Up/Down Stairway",
-        type: tool_type_area,
+        type: tool_type_area_square | tool_type_area_circle,
         hotkey: "i",
         preview: true,
         keycode: 73,
-        run: function(map, start_z, end_z, start_x, end_x, start_y, end_y) {
-            for (z = start_z; z <= end_z; z += 1) {
-                for (x = start_x; x <= end_x; x += 1) {
-                    for (y = start_y; y <= end_y; y += 1) {
-                        map[z][x][y] = tile_types.stairs_updown;
-                    }
-                }
-            }
+        run: function(map, tool_selector) {
+            tool_selector(function(x,y,z) {
+                map[z][x][y] = tile_types.stairs_updown;
+            });
         }
     };
 
     // Up/Down stairs designation tool
     tools.removedes = {
         name: "Remove designation",
-        type: tool_type_area,
+        type: tool_type_area_square | tool_type_area_circle,
         hotkey: "x",
         preview: true,
         keycode: 88,
-        run: function(map, start_z, end_z, start_x, end_x, start_y, end_y) {
-            for (z = start_z; z <= end_z; z += 1) {
-                for (x = start_x; x <= end_x; x += 1) {
-                    for (y = start_y; y <= end_y; y += 1) {
-                        map[z][x][y] = tile_types.hidden;
-                    }
-                }
-            }
+        run: function(map, tool_selector) {
+            tool_selector(function(x,y,z) {
+                map[z][x][y] = tile_types.hidden;
+            });
         }
     };
 
     // Clear tool for current z-level
     tools.clearlevel = {
         name: "Clear selected z-level",
-        type: tool_type_point,
+        type: tool_type_level,
         hotkey: "y",
         preview: false,
         keycode: 89,
-        run: function(map, start_z, end_z, start_x, end_x, start_y, end_y) { // for a tool of type tool_type_point the start_N and end_N variables are guaranteed to be the same.
-            for (x = 0; x <= map_size_x - 1; x += 1) {
-                for (y = 0; y <= map_size_y - 1; y += 1) {
-                    map[camera_z][x][y] = tile_types.hidden;
-                }
-            }
+        run: function(map, tool_selector) {
+            tool_selector(function(x,y,z) {
+                map[z][x][y] = tile_types.hidden;
+            });
         }
     };
 
     // Export tool
     tools.export_quickfort = {
-        name: "Export to QuickFort (area select)",
-        type: tool_type_area,
+        name: "Export to QuickFort",
+        type: tool_type_area_square,
         hotkey: "q",
         preview: false,
         keycode: 81,
-        run: function(map, start_z, end_z, start_x, end_x, start_y, end_y) {
-            var exportmap = { // TODO: add more designation types
-                dig: 'd',
-                stairs_updown: 'i'
-            };
+        run: function(map, tool_selector) {
+            tool_selector(function(x,y,z) {
 
-            var seperator = ',';
+                var exportmap = { // TODO: add more designation types
+                    dig: 'd',
+                    stairs_updown: 'i'
+                };
 
-            var output = "#dig Blueprint generated by DFDesigner. Z-level: " + (camera_z + 1).toString() + ".\n\n";
+                var seperator = ',';
 
-            // TODO: Skip empty columns and rows from start to finish
+                var output = "#dig Blueprint generated by DFDesigner. Z-level: " + (camera_z + 1).toString() + ".\n\n";
 
-            for (y = start_y; y <= end_y; y += 1) {
-               for (x = start_x; x <= end_x; x += 1) {
-                    if (map[camera_z][x][y] != undefined) {
-                        output += exportmap[map[camera_z][x][y]];
+                // TODO: Skip empty columns and rows from start to finish
+
+                for (y = start_y; y <= end_y; y += 1) {
+                   for (x = start_x; x <= end_x; x += 1) {
+                        if (map[camera_z][x][y] != undefined) {
+                            output += exportmap[map[camera_z][x][y]];
+                        }
+                        output += seperator;
                     }
-                    output += seperator;
+
+                    output += '\n';
                 }
 
-                output += '\n';
-            }
-
-            alert(output); // TODO: Show output proper (text box / HTML element?)
+                alert(output); // TODO: Show output proper (text box / HTML element?)
+            });
         }
     };
 
@@ -225,6 +219,23 @@ function loadTools() {
 
     // The default tool is set here:
     cursor_tool = tools.dig;
+}
+
+
+function create_selector_area_square(start_z, end_z, start_x, end_x, start_y, end_y) {
+    if (start_x > end_x) { end_x = start_x; start_x = cursor_start_x; }
+    if (start_y > end_y) { end_y = start_y; start_y = cursor_start_y; }
+    if (start_z > end_z) { end_z = start_z; start_z = cursor_start_z; }
+
+    return function(tool) {
+        for (z = start_z; z <= end_z; z += 1) {
+            for (x = start_x; x <= end_x; x += 1) {
+                for (y = start_y; y <= end_y; y += 1) {
+                    tool(x, y, z);
+                }
+            }
+        }
+    }
 }
 
 function setCanvasSize(set_world_size) {
@@ -314,26 +325,15 @@ function enableDesigner() {
                 handled = true;
                 break;
 			case 13: // enter
-                if (cursor_tool.type == tool_type_area) {
+                if (cursor_tool.type & tool_type_area_square) {
 
     				if (cursor_down) {
     					// finish rectangle
     					logmessage("finishing area select");
     					cursor_down = false;
     					
-                        // TODO: Make function out of this (shared with mouse)
-                        var start_z = camera_z;
-    					var start_x = cursor_x;
-    					var start_y = cursor_y;
-                        var end_z = cursor_start_z;
-    					var end_x = cursor_start_x;
-    					var end_y = cursor_start_y;
-    					
-    					if (start_x > end_x) { end_x = start_x; start_x = cursor_start_x; }
-    					if (start_y > end_y) { end_y = start_y; start_y = cursor_start_y; }
-                        if (start_z > end_z) { end_z = start_z; start_z = cursor_start_z; }
-    					
-                        cursor_tool.run(map, start_z, end_z, start_x, end_x, start_y, end_y);
+                        var selector = create_selector_area_square(camera_z, cursor_start_z, cursor_x, cursor_start_x, cursor_y, cursor_start_y);
+                        cursor_tool.run(map, selector);
     				} else {
     					logmessage("starting area select");
                         cursor_start_z = camera_z;
@@ -342,14 +342,11 @@ function enableDesigner() {
     					
     					cursor_down = true;
     				}
-                } else if (cursor_tool.type == tool_type_point) {
+                } else if (cursor_tool.type & tool_type_level) {
                     logmessage("point select");
 
-                    var start_z = camera_z;
-                    var start_x = cursor_x;
-                    var start_y = cursor_y;
-
-                    cursor_tool.run(map, start_z, start_z, start_x, start_x, start_y, start_y);
+                    var selector = create_selector_area_square(camera_z, camera_z, cursor_x, cursor_x, cursor_y, cursor_y);
+                    cursor_tool.run(map, selector);
 
                 }
 
@@ -365,7 +362,7 @@ function enableDesigner() {
 
                 logmessage("selected tool: " + cursor_tool.name);
 
-                if (cursor_tool.type == tool_type_point) {
+                if (cursor_tool.type & tool_type_level) {
                     cursor_down = false;
                 }
 
@@ -475,7 +472,7 @@ function handle_onMouseDown(x, y) {
 
     moveCursor(camera_z, tile_x + camera_x, tile_y + camera_y);
 
-    if (cursor_tool.type == tool_type_area) {
+    if (cursor_tool.type & tool_type_area_square) {
         cursor_start_x = cursor_x;
         cursor_start_y = cursor_y;
         cursor_start_z = camera_z;
@@ -515,7 +512,7 @@ function handle_onMouseUp(x, y) {
 
                         logmessage("selected tool: " + cursor_tool.name);
 
-                        if (cursor_tool.type == tool_type_point) {
+                        if (cursor_tool.type & tool_type_level) {
                             cursor_down = false;
                         }
                     }
@@ -532,21 +529,10 @@ function handle_onMouseUp(x, y) {
 function handle_endDrag() {
     logmessage("ending select");
 
-    // TODO: Make function out of this (shared with keyboard)
-    var start_z = camera_z;
-    var start_x = cursor_x;
-    var start_y = cursor_y;
-    var end_z = cursor_start_z;
-    var end_x = cursor_start_x;
-    var end_y = cursor_start_y;
-    
-    if (start_x > end_x) { end_x = start_x; start_x = cursor_start_x; }
-    if (start_y > end_y) { end_y = start_y; start_y = cursor_start_y; }
-    if (start_z > end_z) { end_z = start_z; start_z = cursor_start_z; }
-
     cursor_down = false;
-    
-    cursor_tool.run(map, start_z, end_z, start_x, end_x, start_y, end_y);
+
+    var selector = create_selector_area_square(camera_z, cursor_start_z, cursor_x, cursor_start_x, cursor_y, cursor_start_y);
+    cursor_tool.run(map, selector);
 }
 
 function handle_onMouseMove(x, y) {
@@ -639,14 +625,14 @@ function loadImages() {
 function createWorld() {
     map = []; map_background = [];
 
-    // initialize map as a series of arrays containing arrays
+    // initialize map as a series of arrays containing arrays (making a "3 dimensional"-array)
     for (z = 0; z < map_size_z; z += 1) {
         map[z] = []; map_background[z] = [];
         for (x = 0; x < map_size_x; x += 1) {
             map[z][x] = []; map_background[z][x] = [];
             for (y = 0; y < map_size_y; y += 1) {
                 // randomly distribute some background tiles (bg1 through bg3) to those tiles
-                var ran = Math.floor((Math.random()*450)+1);
+                var ran = Math.floor((Math.random()*450)+1); // 450 chosen as magic number through a bit of experimentation
                 if (ran == 1) {
                     map_background[z][x][y] = tile_types.bg1;
                 }
@@ -715,19 +701,8 @@ function draw() {
             }
         }
 
-        // TODO: Make function out of this (shared with keyboard)
-        var start_z = camera_z;
-        var start_x = cursor_x;
-        var start_y = cursor_y;
-        var end_z = cursor_start_z;
-        var end_x = cursor_start_x;
-        var end_y = cursor_start_y;
-        
-        if (start_x > end_x) { end_x = start_x; start_x = cursor_start_x; }
-        if (start_y > end_y) { end_y = start_y; start_y = cursor_start_y; }
-        if (start_z > end_z) { end_z = start_z; start_z = cursor_start_z; }
-        
-        cursor_tool.run(map_temp, start_z, end_z, start_x, end_x, start_y, end_y);
+        var selector = create_selector_area_square(camera_z, cursor_start_z, cursor_x, cursor_start_x, cursor_y, cursor_start_y);
+        cursor_tool.run(map_temp, selector);
 
         context.fillStyle="black";
 

@@ -4,11 +4,13 @@
 
 // Big todo's before initial release:
 // - Add the remaining designation types
+// - Circles are filled instead of hollow (maybe an option?)
 // - Finish export to quickfort functionality
 // - Camera moves only after you hold your mouse still on the edge for > ~.6 second.
 
-// Random ideas:
+// Todo's:
 // - Small indicator of size of selection: Format: XxY. Eg: 7x6
+// - Serious code cleanup
 
 // map is a 3d array which can be accessed in this way: map[z][x][y]
 // z = elevation, top to bottom (0 = top, map_size_z = bottom)
@@ -114,6 +116,72 @@ function loadDesigner() {
 
     logmessage("starting renderer");
     startDrawLoop();
+}
+
+function startDrawLoop() {
+    draw();
+
+    setInterval(function() {
+        draw();
+    }, 1000 / fps);
+
+    setInterval(function() {
+        tick();
+    }, 100);
+}
+
+function tick() {
+    cursor_blink = !cursor_blink;
+}
+
+function loadImages() {
+
+    var loadedImages = 0;
+    var numImages = 0;
+    // get num of sources
+    for(var src in images) {
+        numImages++;
+    }
+    // load images
+    for(var src in images) {
+        var url = images[src];
+
+        images[src] = new Image();
+        images[src].onload = function() {
+            loadedImages += 1;
+            if (loadedImages == numImages) {
+                logmessage("images loaded");
+                draw();
+            }
+        };
+        images[src].src = "img/" + url;
+    };
+}
+
+function createWorld() {
+    map = []; map_background = [];
+
+    // initialize map as a series of arrays containing arrays (making a "3 dimensional"-array)
+    for (z = 0; z < map_size_z; z += 1) {
+        map[z] = []; map_background[z] = [];
+        for (x = 0; x < map_size_x; x += 1) {
+            map[z][x] = []; map_background[z][x] = [];
+            for (y = 0; y < map_size_y; y += 1) {
+                // randomly distribute some background tiles (bg1 through bg3) to those tiles
+                var ran = Math.floor((Math.random()*450)+1); // 450 chosen as magic number through a bit of experimentation
+                if (ran == 1) {
+                    map_background[z][x][y] = tile_types.bg1;
+                }
+                if (ran == 2) {
+                    map_background[z][x][y] = tile_types.bg2;
+                }
+                if (ran == 3) {
+                    map_background[z][x][y] = tile_types.bg3;
+                }
+            }
+        }
+    }
+
 }
 
 function loadTools() {
@@ -327,6 +395,17 @@ function setCanvasSize(set_world_size) {
     logmessage("viewport size (w, h): " + viewport_width.toString() + ", " + viewport_height.toString());
 }
 
+function switchTool(tool) {
+    var oldtool = cursor_tool;
+    cursor_tool = tool;
+
+    if (tool.select) {
+        tool.select(oldtool);
+    }
+
+    logmessage("selected tool: " + cursor_tool.name);
+}
+
 function enableDesigner() {
     logmessage("attaching UI events");
 
@@ -337,8 +416,6 @@ function enableDesigner() {
 
         // Indicates or not whether this keypress is handled. Supresses default browser behavior.
         var handled = false;
-
-        //logmessage("Key pressed: " + evt.keyCode);
 
         // step is a variable that indicates how much to move the cursor by.
         // It is ignored for anything other than the arrow keys.
@@ -356,48 +433,43 @@ function enableDesigner() {
                 // menu up (or close notices etc.)
                 break;
             case 39: // right arrow
-                moveCursor(camera_z, Math.min(cursor_x + step, map_size_x - 1), cursor_y);
-
+                moveCursor(camera_z, cursor_x + step, cursor_y);
                 handled = true;
                 break;
             case 37: // left arrow
-                moveCursor(camera_z, Math.max(cursor_x - step, 0), cursor_y);
-
+                moveCursor(camera_z, cursor_x - step, cursor_y);
                 handled = true;
                 break;
             case 38: // up arrow
-                moveCursor(camera_z, cursor_x, Math.max(cursor_y - step, 0));
-
+                moveCursor(camera_z, cursor_x, cursor_y - step);
                 handled = true;
                 break;
             case 40: // down arror
-                moveCursor(camera_z, cursor_x, Math.min(cursor_y + step, map_size_y - 1));
-
+                moveCursor(camera_z, cursor_x, cursor_y + step);
                 handled = true;
                 break;
             case 33: // page up
 			case 188: // ,
-                moveCursor(Math.min(camera_z + 1, map_size_z - 1), cursor_x, cursor_y);
-
+                moveCursor(camera_z + 1, cursor_x, cursor_y);
                 handled = true;
                 break;
 			case 34: // page down
             case 190: // .
-                moveCursor(Math.max(camera_z - 1, 0), cursor_x, cursor_y);
-
+                moveCursor(camera_z - 1, cursor_x, cursor_y);
                 handled = true;
                 break;
 			case 13: // enter
                 if (cursor_tool.type & tool_type_area_square || cursor_tool.type & tool_type_area_circle) {
 
     				if (cursor_down) {
+                        logmessage("finishing area select");
+
     					// finish rectangle
-    					logmessage("finishing area select");
-    					
                         handle_endAreaSelect();
 
     				} else {
     					logmessage("starting area select");
+
                         cursor_start_z = camera_z;
     					cursor_start_x = cursor_x;
     					cursor_start_y = cursor_y;
@@ -416,14 +488,7 @@ function enableDesigner() {
         for(var tool in tools) {
             tool = tools[tool];
             if (evt.keyCode == tool.keycode) {
-                var oldtool = cursor_tool;
-                cursor_tool = tool;
-
-                if (tool.select) {
-                    tool.select(oldtool);
-                }
-
-                logmessage("selected tool: " + cursor_tool.name);
+                switchTool(tool);
 
                 if (cursor_tool.type & tool_type_none) {
                     cursor_down = false;
@@ -442,25 +507,17 @@ function enableDesigner() {
     }
 
     drawregion.onmousedown = function(evt) {
-        var x = evt.clientX;
-        var y = evt.clientY;
-
-        handle_onMouseDown(x, y);
-
+        handle_onMouseDown(evt.clientX, evt.clientY);
         return false; // prevents the default browser behavior
     };
 
     drawregion.addEventListener('touchstart', function(evt) {
         // If there's exactly one finger inside this element
         if (evt.targetTouches.length == 1) {
-            var touch = evt.targetTouches[0];
-            // Place element where the finger is
-            var x = touch.pageX;
-            var y = touch.pageY;
-
             logmessage("touch down");
-
-            handle_onMouseDown(x, y);
+            // Place element where the finger is
+            var touch = evt.targetTouches[0];
+            handle_onMouseDown(touch.pageX, touch.pageY);
         }
 
         evt.preventDefault();
@@ -468,24 +525,17 @@ function enableDesigner() {
     });
 
     drawregion.onmousemove = function(evt) {
-        // TODO: Ignore small pixel movements (accidental mouse bumps)
-        var x = evt.clientX;
-        var y = evt.clientY;
-
-        handle_onMouseMove(x, y);
-
+        // TODO: Maybe ignore small pixel movements (accidental mouse bumps)
+        handle_onMouseMove(evt.clientX, evt.clientY);
         return false; // prevents the default behavior. Fixes problem with cursor changes and broken mouse functionality.
     };
 
     drawregion.addEventListener('touchmove', function(evt) {
         // If there's exactly one finger inside this element
         if (evt.targetTouches.length == 1) {
-            var touch = evt.targetTouches[0];
             // Place element where the finger is
-            var x = touch.pageX;
-            var y = touch.pageY;
-
-            handle_onMouseMove(x, y);
+            var touch = evt.targetTouches[0];
+            handle_onMouseMove(touch.pageX, touch.pageY);
         }
 
         evt.preventDefault();
@@ -494,25 +544,18 @@ function enableDesigner() {
 
 
     drawregion.onmouseup = function(evt) {
-        var x = evt.clientX;
-        var y = evt.clientY;
-
-        handle_onMouseUp(x, y);
-
+        handle_onMouseUp(evt.clientX, evt.clientY);
         return false; // prevents the default behavior
     };
 
     drawregion.addEventListener('touchend', function(evt) {
         // If there's exactly one finger inside this element
         if (evt.changedTouches.length > 0) {
-            var touch = evt.changedTouches[0];
-            // Place element where the finger is
-            var x = touch.pageX;
-            var y = touch.pageY;
-
             logmessage("touch up");
 
-            handle_onMouseUp(x, y);
+            // Place element where the finger is
+            var touch = evt.changedTouches[0];
+            handle_onMouseUp(touch.pageX, touch.pageY);
         }
 
         evt.preventDefault();
@@ -554,11 +597,8 @@ function handle_onMouseUp(x, y) {
         if (cursor_down) {
             handle_endAreaSelect();
         } else {
-            // clicked a menu item
-
-            // the menu items start at: tile_size * 4 and are then evenly spaced apart by text_line_height pixels
+            // clicked a menu item, the menu items start at: tile_size * 4 and are then evenly spaced apart by text_line_height pixels
             var menu_start = tile_size * 4;
-
             var menu_index = Math.round((y - menu_start) / text_line_height);
             
             if (menu_index >= 0) {
@@ -568,14 +608,7 @@ function handle_onMouseUp(x, y) {
                 {
                     tool = tools[tool];
                     if (n == menu_index) {
-                        var oldtool = cursor_tool;
-                        cursor_tool = tool;
-
-                        if (tool.select) {
-                            tool.select(oldtool);
-                        }
-
-                        logmessage("selected tool: " + cursor_tool.name);
+                        switchTool(tool);
 
                         if (cursor_tool.type & tool_type_none) {
                             cursor_down = false;
@@ -602,49 +635,41 @@ function handle_endAreaSelect() {
 
 // based on the current context (selected tool, preferred tool shape) returns the proper selector
 function getSelector() {
-
     var preferred = tool_current_shape;
     var supported = cursor_tool.type;
 
-    logmessage("preferred selector: " + preferred);
-    logmessage("supported selector: " + supported);
-
-    var selector = null; // return value
+    // level select
+    if (cursor_tool.type & tool_type_level) {
+        return selector = create_selector_area_square(camera_z, camera_z, 0, map_size_x - 1, 0, map_size_y - 1);
+    }
 
     // if the preferred tool is supported, use the preferred tool
     if (supported & preferred) {
-        // circle select
+        // if preferred tool is circle select, use circle select
         if (preferred & tool_type_area_circle) {
             var radius = Math.max(Math.abs(cursor_start_x - cursor_x), Math.abs(cursor_start_y - cursor_y));
-            selector = create_selector_area_circle(camera_z, cursor_start_z, cursor_start_x, cursor_start_y, radius);
+            return create_selector_area_circle(camera_z, cursor_start_z, cursor_start_x, cursor_start_y, radius);
         }
-        // square select
+        // if preferred tool is square select, use square select
         if (preferred & tool_type_area_square) {
-            selector = create_selector_area_square(camera_z, cursor_start_z, cursor_x, cursor_start_x, cursor_y, cursor_start_y);
+            return create_selector_area_square(camera_z, cursor_start_z, cursor_x, cursor_start_x, cursor_y, cursor_start_y);
         }
     } else {
-        // square select
+        // if selected tool is not available, defaulting to square select
         if (supported & tool_type_area_square) {
-            selector = create_selector_area_square(camera_z, cursor_start_z, cursor_x, cursor_start_x, cursor_y, cursor_start_y);
+            return create_selector_area_square(camera_z, cursor_start_z, cursor_x, cursor_start_x, cursor_y, cursor_start_y);
         }
-    }
-
-    // level select
-    if (cursor_tool.type & tool_type_level) {
-        selector = create_selector_area_square(camera_z, camera_z, 0, map_size_x - 1, 0, map_size_y - 1);
     }
 
     // if we don't have a selector, we default to a point select. This covers adequatly the case: cursor_tool.type & tool_type_none || cursor_tool.type & tool_type_point
-    if (selector == null) {
-        selector = create_selector_area_square(camera_z, camera_z, cursor_x, cursor_x, cursor_y, cursor_y);
-    }
-
-    return selector;
+    return create_selector_area_square(camera_z, camera_z, cursor_x, cursor_x, cursor_y, cursor_y);
 }
 
 function handle_onMouseMove(x, y) {
     var tile_x = Math.floor(x / tile_size) - 1; // minus 1 because of the chrome
     var tile_y = Math.floor(y / tile_size) - 1;
+
+    // TODO: Timer for camera movements
 
     moveCursor(camera_z, tile_x + camera_x, tile_y + camera_y);
 }
@@ -687,72 +712,6 @@ function moveCursor(z, x, y) {
         camera_x = Math.min(map_size_x, camera_x + camera_step);
     }
     
-}
-
-function startDrawLoop() {
-    draw();
-
-    setInterval(function() {
-        draw();
-    }, 1000 / fps);
-
-    setInterval(function() {
-        tick();
-    }, 100);
-}
-
-function tick() {
-    cursor_blink = !cursor_blink;
-}
-
-function loadImages() {
-
-    var loadedImages = 0;
-    var numImages = 0;
-    // get num of sources
-    for(var src in images) {
-        numImages++;
-    }
-    // load images
-    for(var src in images) {
-        var url = images[src];
-
-        images[src] = new Image();
-        images[src].onload = function() {
-            loadedImages += 1;
-            if (loadedImages == numImages) {
-				logmessage("images loaded");
-                draw();
-            }
-        };
-        images[src].src = "img/" + url;
-    };
-}
-
-function createWorld() {
-    map = []; map_background = [];
-
-    // initialize map as a series of arrays containing arrays (making a "3 dimensional"-array)
-    for (z = 0; z < map_size_z; z += 1) {
-        map[z] = []; map_background[z] = [];
-        for (x = 0; x < map_size_x; x += 1) {
-            map[z][x] = []; map_background[z][x] = [];
-            for (y = 0; y < map_size_y; y += 1) {
-                // randomly distribute some background tiles (bg1 through bg3) to those tiles
-                var ran = Math.floor((Math.random()*450)+1); // 450 chosen as magic number through a bit of experimentation
-                if (ran == 1) {
-                    map_background[z][x][y] = tile_types.bg1;
-                }
-                if (ran == 2) {
-                    map_background[z][x][y] = tile_types.bg2;
-                }
-                if (ran == 3) {
-                    map_background[z][x][y] = tile_types.bg3;
-                }
-            }
-        }
-    }
-
 }
 
 function draw() {
@@ -859,54 +818,45 @@ function draw() {
     context.fillStyle="black";
     context.fillRect(menu_bar * tile_size, 0, viewport_width, viewport_height);
 
-
-    // render chrome
-    var chrome = images.chrome;
-
-    // top bar
+    // render chrome: top bar
     for (x = 0; x < viewport_width_tiles; x += 1) {
-        context.drawImage(chrome, x * 16, 0, tile_size, tile_size);
+        context.drawImage(images.chrome, x * 16, 0, tile_size, tile_size);
     }
 
-    // bottom bar
+    // render chrome: bottom bar
     for (x = 0; x < viewport_width_tiles; x += 1) {
-        context.drawImage(chrome, x * 16, viewport_height_tiles * 16, tile_size, tile_size);
+        context.drawImage(images.chrome, x * 16, viewport_height_tiles * 16, tile_size, tile_size);
     }
 
-    // left bar
+    // render chrome: left bar
     for (y = 0; y < viewport_height_tiles; y += 1) {
-        context.drawImage(chrome, 0, y * 16, tile_size, tile_size);
+        context.drawImage(images.chrome, 0, y * 16, tile_size, tile_size);
     }
 
-    // right bar
+    // render chrome: right bar
     for (y = 0; y < viewport_height_tiles + 1; y += 1) {
-        context.drawImage(chrome, viewport_width_tiles * 16, y * 16, tile_size, tile_size);
+        context.drawImage(images.chrome, viewport_width_tiles * 16, y * 16, tile_size, tile_size);
     }
 
-    // middle bar ( for menu )
-    
+    // render chrome: middle bar ( for menu )
     for (y = 0; y < viewport_height_tiles; y += 1) {
-        context.drawImage(chrome, menu_bar * 16, y * 16, tile_size, tile_size);
+        context.drawImage(images.chrome, menu_bar * 16, y * 16, tile_size, tile_size);
     }
 
-    // paint current z-level in top right
+    // paint current z-level in top right as 2 characters above each other
     var ui_x = (Math.floor(viewport_width / tile_size) - 1) * tile_size;
 
     var z = (camera_z + 1).toString();
-    var z1 = z.substring(0, 1);
-    var z2 = z.substring(1, 2);
     context.font = text_font;
     context.fillStyle = text_font_color_active;
-    context.fillText(z1.toString(), ui_x + 3, tile_size * 2);
-    context.fillText(z2.toString(), ui_x + 3, tile_size * 3);
+    context.fillText(z.substring(0, 1), ui_x + 3, tile_size * 2);
+    context.fillText(z.substring(1, 2), ui_x + 3, tile_size * 3);
 
     // draw menu
-
     pos_x = (menu_bar + 2) * tile_size; // pos_x indicates the starting position for the menu items. This is next to the menu bar with 1 tile in between.
     pos_y = tile_size * 4;
 
-    var n = -1;
-
+    var n = -1; // counter for vertical position (relative)
     for (var tool in tools) {
         tool = tools[tool];
         n += 1;
@@ -919,8 +869,8 @@ function draw() {
             context.fillStyle = text_font_color;
         }
 
-        context.fillText(tool.name, pos_x, pos_y + (text_line_height * n));
-        context.fillText("( " + tool.hotkey + " )", pos_x + ((menu_width_tiles * tile_size) - 100), pos_y + (text_line_height * n));
+        context.fillText(tool.name, pos_x, pos_y + (text_line_height * n)); // paint name of tool on the left side
+        context.fillText("( " + tool.hotkey + " )", pos_x + ((menu_width_tiles * tile_size) - 100), pos_y + (text_line_height * n)); // paint hotkey of tool on the right side
     }
 }
 

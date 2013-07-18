@@ -56,16 +56,27 @@
 
 	<script>
 		var DEBUG = false;
+		var splashclosed = false;
 
 		function onPageLoad() {
 			if (DEBUG) { closeSplash(); }
+
+			document.onkeydown = function(evt) {
+        		evt = evt || window.event;
+        		if (evt.keyCode == 27) {
+        			closeSplash();
+        		}
+            }
 
 			loadDesigner();
 		}
 
 		function closeSplash() {
-			var splashcontainer = document.getElementById('splash');
-			splashcontainer.style.display = 'none';
+			if (splashclosed) { return; }
+			splashclosed = true;
+
+			var splash = document.getElementById('splash');
+			splash.style.display = 'none';
 
 			var drawregion = document.getElementById('drawregion');
 			drawregion.focus();

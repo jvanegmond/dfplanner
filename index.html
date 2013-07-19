@@ -14,7 +14,7 @@
 
 		body, a { color: #CCC; }
 
-		#splash {
+		#splash, #export {
 			position: fixed;
 			left: 50%;
 			margin-left: -430px;
@@ -27,17 +27,17 @@
 			padding: 0px 20px;
 		}
 
-		#closebutton {
+		.closebutton {
 			display: block;
 			margin: 0px auto;
 			text-align: center;
-			width: 100px;
+			width: 200px;
 			border: 2px solid gray;
 			text-decoration: none;
 			margin-top: 32px;
 		}
 
-		#closebutton:hover {
+		.closebutton:hover {
 			background: gray;
 			border: 2px solid #CCC;
 		}
@@ -52,18 +52,29 @@
 		#drawregion {
 			position: fixed;
 		}
+
+		#exporttext {
+			width: 770px;
+			height: 300px;
+			border: 1px solid gray;
+			background: #000011;
+			color: #CCC;
+			font-family: Consolas, monospace;
+			resize: none;
+		}
 	</style>
 
 	<script>
 		var DEBUG = false;
 		var splashclosed = false;
+		var spawn_creatures = ["alligators", "beak dogs", "cheetahs", "cougars", "dingoes", "elephants", "gorillas", "grizzly bears", "jaguars", "leopards", "mandrills", "polar bears", "raccoons", "saltwater crocodiles", "wolves"]
 
 		function onPageLoad() {
 			if (DEBUG) { closeSplash(); }
 
 			document.onkeydown = function(evt) {
         		evt = evt || window.event;
-        		if (evt.keyCode == 27) {
+        		if (evt.keyCode == 27 || evt.keyCode == 13 || evt.keyCode || 32) { // ESC + Enter + Space
         			closeSplash();
         		}
             }
@@ -83,19 +94,35 @@
 
 		    enableDesigner();
 		}
+
+		function closeExport() {
+			var splash = document.getElementById('export');
+			splash.style.display = 'none';
+
+			var drawregion = document.getElementById('drawregion');
+			drawregion.focus();
+		}
 	</script>
 </head>
 <body onLoad="onPageLoad()">
 
 	<canvas id="drawregion" tabindex="1">
-	Your browser does not support the HTML5 canvas tag.
+		Your browser does not support the HTML5 canvas tag. This means that you cannot use Quickfort Planner in your current browser. Try a newer one!
 	</canvas>
 
 	<div id="splash">
-		<h1><a href="https://github.com/Manadar24/Quickfort_Planner" target="_blank">Quickfort Planner</a></h1>
-		<p>This is a web-based fortress designation tool for <a href="http://www.bay12games.com/dwarves/" target="_blank">Dwarf Fortress</a>. You may use it to experiment with different plans which will create the basic outline of your Fortress. You can then optionally export your design to QuickFort.</p>
-		<p>If you're not already familiar with the controls of Dwarf Fortress, you're going to have a bad time.</p>
-		<a id="closebutton" href="#" onClick="closeSplash()">Begin</a>
+		<h1>Quickfort Planner</h1>
+		<p>This is a web-based fortress designation tool for <a href="http://www.bay12games.com/dwarves/" target="_blank">Dwarf Fortress</a> by Bay 12 Games. You may use it to experiment with different blueprints. You can then import your blueprints into a new game or an existing save using <a href="http://www.joelpt.net/quickfort/" target="_blank">Quickfort</a>.</p>
+		<p>Start designing using either the keyboard or the mouse, ere the <script>document.write((Math.random() > 0.5 ? 'giant ' : '') + spawn_creatures[Math.floor(Math.random() * spawn_creatures.length)]);</script> get hungry.</p>
+		<a class="closebutton" href="#" onClick="closeSplash()">Strike the earth!</a>
+		<br style="clear: both" />
+	</div>
+
+	<div id="export" style="display: none">
+		<h1>Your blueprint, ready to be imported</h1>
+		<p>You did it! Copy the below code and put it into a .csv file. Quickfort can then import your blueprint into Dwarf Fortress. If you aren't yet a legendary+5 building designer, there are <a href="instructions.html" target="_blank">full instructions</a> available.</p>
+		<textarea id="exporttext" readonly>Testing!</textarea>
+		<a class="closebutton" href="#" onClick="closeExport()">Close</a>
 		<br style="clear: both" />
 	</div>
 

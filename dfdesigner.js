@@ -6,7 +6,6 @@
 // - Add the remaining designation types
 // - Circles are filled instead of hollow (maybe an option?)
 // - Finish export to quickfort functionality
-// - Camera moves only after you hold your mouse still on the edge for > ~.6 second.
 
 // Todo's:
 // - Small indicator of size of selection: Format: XxY. Eg: 7x6
@@ -665,23 +664,67 @@ function getSelector() {
     return create_selector_area_square(camera_z, camera_z, cursor_x, cursor_x, cursor_y, cursor_y);
 }
 
+var cursor_in_menu = false;
+
 function handle_onMouseMove(x, y) {
-    var tile_x = Math.floor(x / tile_size) - 1; // minus 1 because of the chrome
-    var tile_y = Math.floor(y / tile_size) - 1;
+    // ignore mouse moves inside the menu
+    var menu_bar_x = (Math.floor(viewport_width / tile_size) - menu_width_tiles) * tile_size;
+    if (x > menu_bar_x) { 
+        cursor_in_menu = true;
+        return; 
+    } else {
+        cursor_in_menu = false;
+    }
 
-    // TODO: Timer for camera movements
+    var tile_x = camera_x + Math.floor(x / tile_size) - 1; // minus 1 because of the chrome
+    var tile_y = camera_y + Math.floor(y / tile_size) - 1;
 
-    moveCursor(camera_z, tile_x + camera_x, tile_y + camera_y);
+    // move the cursor, but dont follow the camera immediately
+    var moved = moveCursor(camera_z, tile_x, tile_y, true);
+
+    // if we didnt move the cursor, there's no point in moving the camera
+    if (!moved) { return; }
+
+    var oldz = camera_z;
+    var moveCameraLater = function() {
+        if (oldz != camera_z) { return; }
+        if (cursor_x != tile_x) { return; }
+        if (cursor_y != tile_y) { return; }
+        // delayed camera movement is disabled while the cursor is in the menu (because the user intended to use the menu, and not move camera)
+        if (cursor_in_menu) { return; }
+
+        moveCameraToCursor();
+
+        // and repeat the process in order to keep the camera moving
+        tile_x = camera_x + Math.floor(x / tile_size) - 1; // minus 1 because of the chrome
+        tile_y = camera_y + Math.floor(y / tile_size) - 1;
+        moved = moveCursor(camera_z, tile_x, tile_y, true);
+
+        setTimeout(moveCameraLater, 300);
+    };
+
+    // after N seconds, check if the cursor is still in the same spot, and move the camera
+    setTimeout(moveCameraLater, 300);
 }
 
-function moveCursor(z, x, y) {
-    if (camera_z == z && cursor_x == x && cursor_y == y) { return; }
+// move the cursor, with a flag to indicate if the camera should follow the cursor.
+// returns whether or not the cursor has moved
+function moveCursor(z, x, y, dont_move_camera) {
+    if (camera_z == z && cursor_x == x && cursor_y == y) { return false; }
 
     camera_z = Math.min(Math.max(z, 0), map_size_z - 1);
     cursor_x = Math.min(Math.max(x, 0), map_size_x - 1);
     cursor_y = Math.min(Math.max(y, 0), map_size_y - 1);
 
-    // 
+    if (!dont_move_camera) {
+        moveCameraToCursor();
+    }
+
+    return true;
+}
+
+function moveCameraToCursor() {
+    logmessage("move camera");
     var camera_step = 10;
 
     var rel_x = cursor_x - camera_x;
@@ -711,7 +754,6 @@ function moveCursor(z, x, y) {
     if (diff_x > -5) {
         camera_x = Math.min(map_size_x, camera_x + camera_step);
     }
-    
 }
 
 function draw() {

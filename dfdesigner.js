@@ -4,16 +4,14 @@
 
 // Big todo's before initial release:
 // - Add the remaining designation types
-// - Circles are filled instead of hollow (maybe an option?)
 // - Finish export to quickfort functionality
 
 // Todo's:
 // - Small indicator of size of selection: Format: XxY. Eg: 7x6
-// - Serious code cleanup
 
 // map is a 3d array which can be accessed in this way: map[z][x][y]
 // z = elevation, top to bottom (0 = top, map_size_z = bottom)
-// x = west to east (0 = north, map_size_x = east)
+// x = west to east (0 = west, map_size_x = east)
 // y = north to south direction (0 = north, map_size_y = south)
 var map;
 var map_background; // for bg1 and bg2 and bg3
@@ -290,11 +288,11 @@ function loadTools() {
         },
         select: function(oldtool) {
             if (tool_current_shape === tool_type_area_square) {
-                logmessage("Switched tool shape to circle");
+                logmessage("tool shape = circle");
                 tool_current_shape = tool_type_area_circle;
                 this.name = "Switch tool shape [Circle]";
             } else {
-                logmessage("Switched tool shape to square");
+                logmessage("tool shape = square");
                 tool_current_shape = tool_type_area_square;
                 this.name = "Switch tool shape [Square]";
             }
@@ -308,19 +306,18 @@ function loadTools() {
 
 // when you want to call the run function of a tool with specific coordinates but aren't sure if you are inside the boundary of the map or not
 function toolwboundary(tool, x, y, z) {
-    if (x < 0) { return; }
-    if (y < 0) { return; }
-    if (z < 0) { return; }
-
-    if (x >= map_size_x) { return; }
-    if (y >= map_size_y) { return; }
-    if (z >= map_size_z) { return; }
+    if (x < 0 || x >= map_size_x) { return; }
+    if (y < 0 || y >= map_size_y) { return; }
+    if (z < 0 || z >= map_size_z) { return; }
 
     tool(x, y, z);
 }
 
 function create_selector_area_circle(start_z, end_z, center_x, center_y, radius) {
     if (start_z > end_z) { var t = end_z; end_z = start_z; start_z = t; }
+
+    // This is the integer-only midpoint circle algorithm from Wikipedia. It is a straight up copy of the C++/C# implementation here: http://en.wikipedia.org/wiki/Midpoint_circle_algorithm#Examples
+    // Instead of drawing an hollow circle, this draws a filled circle which I derived myself once I understood the logic after reading this great SO answer: http://stackoverflow.com/a/10878576
 
     return function(tool) {
         if (radius < 0) { return; }
@@ -330,14 +327,10 @@ function create_selector_area_circle(start_z, end_z, center_x, center_y, radius)
             var radiusError = 1 - x;
             
             while (x >= y) {
-                toolwboundary(tool, x + center_x, y + center_y, start_z);
-                toolwboundary(tool, y + center_x, x + center_y, start_z);
-                toolwboundary(tool, -x + center_x, y + center_y, start_z);
-                toolwboundary(tool, -y + center_x, x + center_y, start_z);
-                toolwboundary(tool, -x + center_x, -y + center_y, start_z);
-                toolwboundary(tool, -y + center_x, -x + center_y, start_z);
-                toolwboundary(tool, x + center_x, -y + center_y, start_z);
-                toolwboundary(tool, y + center_x, -x + center_y, start_z);
+                horizontalLine(tool, -x + center_x, x + center_x, y + center_y, z);
+                horizontalLine(tool, -y + center_x, y + center_x, x + center_y, z);
+                horizontalLine(tool, -x + center_x, x + center_x, -y + center_y, z);
+                horizontalLine(tool, -y + center_x, y + center_x, -x + center_y, z);
 
                 y = y + 1;
                 if (radiusError < 0) {
@@ -351,6 +344,11 @@ function create_selector_area_circle(start_z, end_z, center_x, center_y, radius)
     }
 }
 
+function horizontalLine(tool, start_x, end_x, y, z) {
+    for (x = start_x; x <= end_x; x += 1) {
+        toolwboundary(tool, x, y, z);
+    }
+}
 
 function create_selector_area_square(start_z, end_z, start_x, end_x, start_y, end_y) {
     if (start_x > end_x) { var t = end_x; end_x = start_x; start_x = t; }
@@ -385,7 +383,7 @@ function setCanvasSize(set_world_size) {
         var map_size_y_min = 60;
 
         map_size_x = Math.max(viewport_width_tiles - menu_width_tiles, map_size_x_min);
-        map_size_y = map_size_x; //Math.max(map_size_y_min, Math.floor(viewport_height / tile_size));
+        map_size_y = map_size_x;
         logmessage("map size (z, x, y): " + map_size_z.toString() + ", " + map_size_x.toString() + ", " + map_size_y.toString());
 
         // TODO: Set the camera to the middle or the bottom right of the screen
@@ -416,8 +414,7 @@ function enableDesigner() {
         // Indicates or not whether this keypress is handled. Supresses default browser behavior.
         var handled = false;
 
-        // step is a variable that indicates how much to move the cursor by.
-        // It is ignored for anything other than the arrow keys.
+        // step is a variable that indicates how much to move the cursor by. It is ignored for anything other than the arrow keys.
         var step = 1;
         if (evt.shiftKey) {
             step = 10;
@@ -569,8 +566,6 @@ function handle_onMouseDown(x, y) {
 
     if (x > menu_border) { return; }
 
-    logmessage("starting select");
-
     // TODO: Make function out of this
     var tile_x = Math.floor(x / tile_size) - 1; // minus 1 because of the chrome
     var tile_y = Math.floor(y / tile_size) - 1;
@@ -624,10 +619,10 @@ function handle_onMouseUp(x, y) {
 }
 
 function handle_endAreaSelect() {
-    logmessage("ending select");
-
     cursor_down = false;
 
+    logmessage("Running tool: " + cursor_tool.name);
+    
     var selector = getSelector();
     cursor_tool.run(map, selector);
 }
@@ -724,7 +719,6 @@ function moveCursor(z, x, y, dont_move_camera) {
 }
 
 function moveCameraToCursor() {
-    logmessage("move camera");
     var camera_step = 10;
 
     var rel_x = cursor_x - camera_x;

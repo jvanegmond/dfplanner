@@ -472,13 +472,14 @@ function setCanvasSize(set_world_size) {
 
     if (set_world_size) {
         var map_size_x_min = 100;
-        var map_size_y_min = 60;
+        var map_size_y_min = 80;
 
         map_size_x = Math.max(viewport_width_tiles - menu_width_tiles, map_size_x_min);
         map_size_y = map_size_x;
         logmessage("map size (z, x, y): " + map_size_z.toString() + ", " + map_size_x.toString() + ", " + map_size_y.toString());
 
-        // TODO: Set the camera to the middle or the bottom right of the screen
+        camera_x = Math.round((map_size_x - - menu_width_tiles - viewport_width_tiles) / 2);
+        camera_y = Math.round((map_size_y - viewport_height_tiles) / 2);
     }    
 
     logmessage("viewport size (w, h): " + viewport_width.toString() + ", " + viewport_height.toString());

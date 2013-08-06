@@ -1,7 +1,6 @@
 <!DOCTYPE html>
 <html>
 <head>
-	<script src="dfdesigner.js"></script>
 	<style>
 		body {
 			background: black;
@@ -63,7 +62,8 @@
 			resize: none;
 		}
 	</style>
-
+	<script src="wtf-trace.js"></script>
+	<script src="dfdesigner.js"></script>
 	<script>
 		var DEBUG = false;
 		var splashclosed = false;
@@ -74,7 +74,7 @@
 
 			document.onkeydown = function(evt) {
         		evt = evt || window.event;
-        		if (evt.keyCode == 27 || evt.keyCode == 13 || evt.keyCode || 32) { // ESC + Enter + Space
+        		if (evt.keyCode == 27 || evt.keyCode == 13 || evt.keyCode == 32) { // ESC + Enter + Space
         			closeSplash();
         		}
             }

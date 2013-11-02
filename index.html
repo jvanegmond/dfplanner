@@ -16,7 +16,8 @@
 		#splash, #export {
 			position: fixed;
 			left: 50%;
-			margin-left: -430px;
+			top: 0%;
+			margin-left: -430px; /* half the elements width */
 			margin-top: 50px;
 
 			display: block;
@@ -41,15 +42,15 @@
 			border: 2px solid #CCC;
 		}
 
-		html, body, #container, #drawregion {
+		html, body, #drawregion, #drawregion canvas {
 			display: block;
 			margin: 0px;
 			width: 100%;
 			height: 100%;
 		}
 
-		#drawregion {
-			position: fixed;
+		#drawregion canvas {
+			position: absolute;
 		}
 
 		#exporttext {
@@ -58,7 +59,7 @@
 			border: 1px solid gray;
 			background: #000011;
 			color: #CCC;
-			font-family: Consolas, monospace;
+			font-family: "Consolas", monospace;
 			resize: none;
 		}
 	</style>
@@ -106,9 +107,9 @@
 </head>
 <body onLoad="onPageLoad()">
 
-	<canvas id="drawregion" tabindex="1">
-		Your browser does not support the HTML5 canvas tag. This means that you cannot use Quickfort Planner in your current browser. Try a newer one!
-	</canvas>
+	<div id="drawregion" tabindex="1">
+		
+	</div>
 
 	<div id="splash">
 		<h1>Quickfort Planner</h1>

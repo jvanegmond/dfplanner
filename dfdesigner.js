@@ -20,9 +20,13 @@ var menu_width_tiles = 23; // makes the right side menu wider or smaller. its wi
 var tile_size = 16; // in pixels
 
 // the current viewport (eg browser)
-var viewport_element; // id = drawregion
-var viewport_element_drawcontext;
-var container_element; // id = container
+var container_element;
+var viewport_zlevel, viewport_zlevel_drawcontext;
+var viewport_zlevel_background, viewport_zlevel_background_drawcontext;
+var viewport_cursor, viewport_cursor_drawcontext;
+var viewport_chrome, viewport_chrome_drawcontext;
+var viewport_menu, viewport_menu_drawcontext;
+var viewports = [];
 
 var viewport_width = 800;
 var viewport_height = 600;
@@ -33,7 +37,10 @@ var viewport_width_tiles = Math.floor(viewport_width / tile_size) - 1;
 // screen is only redrawed when necessary. tools, keyboard and mouse input request the redraw.
 // the fps indicates here is how often the redraw request is checked.
 var max_fps = 60;
-var requestDraw = false;
+var requestDrawZlevel = false;
+var requestDrawZlevelBackground = false;
+var requestDrawMenu = false;
+var requestDrawChrome = false;
 
 // size of the map, set to arbitrary defaults which are almost immediately overriden
 var map_size_z = 40;
@@ -106,12 +113,63 @@ var text_font_color_active = "white";
 var text_font_color = "#CCC";
 var text_font = "12pt sans-serif";
 
+// polyfill for requestAnimationFrame
+(function() {
+    var lastTime = 0;
+    var vendors = ['webkit', 'moz'];
+    for(var x = 0; x < vendors.length && !window.requestAnimationFrame; ++x) {
+        window.requestAnimationFrame = window[vendors[x]+'RequestAnimationFrame'];
+        window.cancelAnimationFrame =
+          window[vendors[x]+'CancelAnimationFrame'] || window[vendors[x]+'CancelRequestAnimationFrame'];
+    }
+
+    if (!window.requestAnimationFrame)
+        window.requestAnimationFrame = function(callback, element) {
+            var currTime = new Date().getTime();
+            var timeToCall = Math.max(0, 16 - (currTime - lastTime));
+            var id = window.setTimeout(function() { callback(currTime + timeToCall); },
+              timeToCall);
+            lastTime = currTime + timeToCall;
+            return id;
+        };
+
+    if (!window.cancelAnimationFrame)
+        window.cancelAnimationFrame = function(id) {
+            clearTimeout(id);
+        };
+}());
+
 function loadDesigner() {
     WTF.trace.timeStamp('loadDesigner');
 
-    viewport_element = document.getElementById("drawregion");
-    viewport_element_drawcontext = viewport_element.getContext("2d");
-    container_element = document.getElementById("container");
+    container_element = document.getElementById("drawregion");
+
+    // Create a viewport for the current z-level background
+    viewport_zlevel_background = document.createElement("canvas");
+    viewport_zlevel_background_drawcontext = viewport_zlevel_background.getContext("2d");
+    container_element.appendChild(viewport_zlevel_background);
+
+    // Create a viewport for the current z-level
+    viewport_zlevel = document.createElement("canvas");
+    viewport_zlevel_drawcontext = viewport_zlevel.getContext("2d");
+    container_element.appendChild(viewport_zlevel);
+
+    // Create a viewport for the cursor
+    viewport_cursor = document.createElement("canvas");
+    viewport_cursor_drawcontext = viewport_cursor.getContext("2d");
+    container_element.appendChild(viewport_cursor);
+
+    // Create a viewport for the chrome
+    viewport_chrome = document.createElement("canvas");
+    viewport_chrome_drawcontext = viewport_chrome.getContext("2d");
+    container_element.appendChild(viewport_chrome);
+
+    // Create a viewport for the menu
+    viewport_menu = document.createElement("canvas");
+    viewport_menu_drawcontext = viewport_menu.getContext("2d");
+    container_element.appendChild(viewport_menu);
+
+    viewports = [viewport_zlevel_background, viewport_zlevel, viewport_cursor, viewport_chrome, viewport_menu];
 
     setCanvasSize(true);
     loadTools();
@@ -131,15 +189,17 @@ function loadDesigner() {
 }
 
 function startDrawLoop() {
-    setInterval(function() {
+    (function drawLoop() {
+        requestAnimationFrame(drawLoop);
         draw();
-    }, 1000 / max_fps);
+    })();
 
     setInterval(function() {
         tick();
     }, 100);
 
-    requestDraw = true;
+    requestDrawZlevelBackground = true;
+    requestDrawZlevel = true;
 }
 
 function tick() {
@@ -167,7 +227,10 @@ function loadImages() {
             loadedImages += 1;
             if (loadedImages == numImages) {
                 WTF.trace.timeStamp('loadImages.completed');
-                requestDraw = true;
+                requestDrawZlevel = true;
+                requestDrawZlevelBackground = true;
+                requestDrawChrome = true;
+                requestDrawMenu = true;
             }
         };
         images[src].src = "img/" + url;
@@ -491,8 +554,11 @@ function setCanvasSize(set_world_size) {
     viewport_width = document.body.clientWidth;
     viewport_height = document.body.clientHeight;
 
-    viewport_element.width = viewport_width;
-    viewport_element.height = viewport_height;
+    for (var i = 0; i < viewports.length; i++) {
+        var viewport = viewports[i];
+        viewport.width = viewport_width;
+        viewport.height = viewport_height;
+    };
 
     viewport_height_tiles = Math.floor(viewport_height / tile_size) - 1;
     viewport_width_tiles = Math.floor(viewport_width / tile_size) - 1;
@@ -511,6 +577,11 @@ function setCanvasSize(set_world_size) {
 
     logmessage("viewport size (w, h): " + viewport_width.toString() + ", " + viewport_height.toString());
 
+    requestDrawMenu = true;
+    requestDrawZlevel = true;
+    requestDrawChrome = true;
+    requestDrawZlevelBackground = true;
+
     WTF.trace.leaveScope(scope);
 }
 
@@ -522,6 +593,7 @@ function switchTool(tool) {
         tool.select(oldtool);
     }
 
+    requestDrawMenu = true;
     logmessage("selected tool: " + cursor_tool.name);
 }
 
@@ -530,7 +602,7 @@ function enableDesigner() {
 
     logmessage("attaching UI events");
 
-    viewport_element.onkeydown = function(evt) {
+    container_element.onkeydown = function(evt) {
         evt = evt || window.event;
 
         // Indicates or not whether this keypress is handled. Supresses default browser behavior.
@@ -617,19 +689,20 @@ function enableDesigner() {
         }
 
         if (handled) {
-            requestDraw = true; // extra draw for that snappy response times
+            requestDrawZlevel = true;
+            requestDrawMenu = true;
             return false; // suppress default behavior
         } else {
             return true;
         }
     }
 
-    viewport_element.onmousedown = function(evt) {
+    container_element.onmousedown = function(evt) {
         handle_onMouseDown(evt.clientX, evt.clientY);
         return false; // prevents the default browser behavior
     };
 
-    viewport_element.addEventListener('touchstart', function(evt) {
+    container_element.addEventListener('touchstart', function(evt) {
         // If there's exactly one finger inside this element
         if (evt.targetTouches.length == 1) {
             logmessage("touch down");
@@ -645,7 +718,7 @@ function enableDesigner() {
     var oldClientX = 0;
     var oldClientY = 0;
 
-    viewport_element.onmousemove = function(evt) {
+    container_element.onmousemove = function(evt) {
         var clientX = evt.clientX;
         var clientY = evt.clientY;
         if (oldClientX == clientX && oldClientY == clientY) { return; }
@@ -654,7 +727,7 @@ function enableDesigner() {
         return false; // prevents the default behavior. Fixes problem with cursor changes and broken mouse functionality.
     };
 
-    viewport_element.addEventListener('touchmove', function(evt) {
+    container_element.addEventListener('touchmove', function(evt) {
         // If there's exactly one finger inside this element
         if (evt.targetTouches.length == 1) {
             // Place element where the finger is
@@ -667,12 +740,12 @@ function enableDesigner() {
     });
 
 
-    viewport_element.onmouseup = function(evt) {
+    container_element.onmouseup = function(evt) {
         handle_onMouseUp(evt.clientX, evt.clientY);
         return false; // prevents the default behavior
     };
 
-    viewport_element.addEventListener('touchend', function(evt) {
+    container_element.addEventListener('touchend', function(evt) {
         // If there's exactly one finger inside this element
         if (evt.changedTouches.length > 0) {
             logmessage("touch up");
@@ -710,7 +783,7 @@ function handle_onMouseDown(x, y) {
         cursor_down = true;
     }
 
-    requestDraw = true;
+    requestDrawZlevel = true;
 }
 
 function handle_onMouseUp(x, y) {
@@ -718,9 +791,9 @@ function handle_onMouseUp(x, y) {
 
     // Check if the mouse is clicked inside the menu
     var menu_border = (1 + viewport_width_tiles - menu_width_tiles) * tile_size;
-
     if (x > menu_border) {
-        // ending a drag in the menu border should still work
+
+        // check if ending a drag in the menu border
         if (cursor_down) {
             handle_endAreaSelect();
         } else {
@@ -750,7 +823,7 @@ function handle_onMouseUp(x, y) {
         handle_endAreaSelect();
     }
 
-    requestDraw = true;
+    requestDrawZlevel = true;
 }
 
 function handle_endAreaSelect() {
@@ -763,7 +836,7 @@ function handle_endAreaSelect() {
     var selector = getSelector();
     cursor_tool.run(map, selector);
 
-    requestDraw = true;
+    requestDrawZlevel = true;
 }
 
 function handle_onMouseMove(x, y) {
@@ -818,15 +891,21 @@ function moveCursor(z, x, y, dont_move_camera) {
 
     if (camera_z == z && cursor_x == x && cursor_y == y) { return false; }
 
+    var old_camera_z = camera_z;
+
     camera_z = Math.min(Math.max(z, 0), map_size_z - 1);
     cursor_x = Math.min(Math.max(x, 0), map_size_x - 1);
     cursor_y = Math.min(Math.max(y, 0), map_size_y - 1);
+
+    if (camera_z != old_camera_z) {
+        requestDrawZlevelBackground = true;
+    }
 
     if (!dont_move_camera) {
         moveCameraToCursor();
     }
 
-    requestDraw = true;
+    requestDrawZlevel = true;
 
     return true;
 }
@@ -900,62 +979,32 @@ function getSelector() {
     return create_selector_area_square(camera_z, camera_z, cursor_x, cursor_x, cursor_y, cursor_y);
 }
 
-function draw() {
-    if (!requestDraw) { return; }
-    requestDraw = false;
-
-    /* START DRAW */
-    var scope_draw = WTF.trace.enterScope('draw');
+function drawCurZlevel() {
+    if (!requestDrawZlevel) return;
+    requestDrawZlevel = false;
 
     // calculations to aid drawing process this makes sure we don't render (much) more than is necessary
     var max_render_x = Math.min(camera_x + viewport_width_tiles, map_size_x) - 1;
     var max_render_y = Math.min(camera_y + viewport_height_tiles, map_size_y) - 1;
 
-    /* START FILL WITH BLACK */
-    var scope_draw_fillblack = WTF.trace.enterScope('draw.fillblack');
-
-    // Ok, so, on the surface, clearing the screen is not a very complex problem.
-    // Since we are pretty much always redrawing the UI anyway, we can just do this:
-    // viewport_element_drawcontext.fillRect(0, 0, viewport_width, viewport_height);
-    // right? Well, no. That call takes about 20ms on my dev machine on latest Chrome.
-    // That means, even if we do nothing else, we are capped to 50 FPS.
-    // Instead of doing that, we are more or less obligated to track down any changes we
-    // do to the canvas. Example: Redrawing the (static) parts of the UI every time is a bad move.
-
-    // For starters, check out http://www.html5rocks.com/en/tutorials/canvas/performance/ chapter "Render screen differences only".
-
-    // Basically, for now I have decided on a fairly naive approach of clearing the screen.
-    // When the performance goes down, priority of changing this behavior goes up.
-    viewport_element_drawcontext.fillStyle="black";
-    viewport_element_drawcontext.fillRect(1 * tile_size, 1 * tile_size, (viewport_width_tiles - menu_width_tiles) * tile_size, (viewport_height_tiles - 1) * tile_size);
-
-    WTF.trace.leaveScope(scope_draw_fillblack);
-    /* END FILL WITH BLACK */
+    /* START CLEAR */
+    var scope_draw_clearrect = WTF.trace.enterScope('draw.clearrect');
+    viewport_zlevel_drawcontext.clearRect(tile_size, tile_size, (viewport_width_tiles - menu_width_tiles) * tile_size, (viewport_height_tiles - 1) * tile_size);
+    WTF.trace.leaveScope(scope_draw_clearrect);
+    /* END CLEAR */
 
     /* START RENDER Z LEVEL */
     var scope_draw_zlevel = WTF.trace.enterScope('draw.zlevel');
 
     for (x = camera_x; x < max_render_x; x += 1) {
         for (y = camera_y; y < max_render_y; y += 1) {
-
             // only paint non-empty tiles
             var curtile = map[camera_z][x][y];
-            if (curtile === tile_types.hidden) {
-                
-                var curbgtile = map_background[camera_z][x][y];
-
-                // hidden tiles have random backgrounds, paint those
-                if (curbgtile !== tile_types.hidden) {
-                    var pos_x = 1 + x - camera_x;
-                    var pos_y = 1 + y - camera_y;
-
-                    viewport_element_drawcontext.drawImage(images[curbgtile], pos_x * 16, pos_y * 16, tile_size, tile_size);
-                }
-            } else {
+            if (curtile !== tile_types.hidden) {
                 var pos_x = 1 + x - camera_x;
                 var pos_y = 1 + y - camera_y;
 
-                viewport_element_drawcontext.drawImage(images[curtile], pos_x * 16, pos_y * 16, tile_size, tile_size);
+                viewport_zlevel_drawcontext.drawImage(images[curtile], pos_x * 16, pos_y * 16, tile_size, tile_size);
             }
         }
     }
@@ -973,7 +1022,9 @@ function draw() {
         // initialize map as a series of arrays containing arrays
         for (z = 0; z < map_size_z; z += 1) {
             for (x = 0; x < map_size_x; x += 1) {
-                map_temp[z][x] = [];
+                for (y = 0; y < map_size_y; y += 1) {
+                    map_temp[z][x][y] = undefined;
+                }
             }
         }
 
@@ -992,7 +1043,7 @@ function draw() {
         /* START TOOL PREVIEW RENDER */
         var scope_draw_toolpreview_render = WTF.trace.enterScope('draw.toolpreview.render');
 
-        viewport_element_drawcontext.fillStyle="black";
+        viewport_zlevel_drawcontext.fillStyle="black";
         for (x = camera_x; x < max_render_x; x += 1) {
             for (y = camera_y; y < max_render_y; y += 1) {
                 var pos_x = 1 + x - camera_x;
@@ -1001,17 +1052,11 @@ function draw() {
                 if (map_temp[camera_z][x][y] === undefined) { continue; }
 
                 if (map_temp[camera_z][x][y] !== tile_types.hidden) {
-                    viewport_element_drawcontext.drawImage(images[map_temp[camera_z][x][y]], pos_x * 16, pos_y * 16, tile_size, tile_size);
+                    viewport_zlevel_drawcontext.drawImage(images[map_temp[camera_z][x][y]], pos_x * 16, pos_y * 16, tile_size, tile_size);
                 } else {
                     // if a tool removes a tile, paint that
-                    if (map[camera_z][x][y] === tile_types.hidden) {
-                        viewport_element_drawcontext.fillRect(pos_x * 16, pos_y * 16, tile_size, tile_size);
-                    }
-
-                    // hidden tiles have random backgrounds, paint those
-                    if (map_background[camera_z][x][y] !== tile_types.hidden) {
-
-                        viewport_element_drawcontext.drawImage(images[map_background[camera_z][x][y]], pos_x * 16, pos_y * 16, tile_size, tile_size);
+                    if (map[camera_z][x][y] !== tile_types.hidden) {
+                        viewport_zlevel_drawcontext.clearRect(pos_x * 16, pos_y * 16, tile_size, tile_size);
                     }
                 }
             }
@@ -1025,66 +1070,103 @@ function draw() {
     WTF.trace.leaveScope(scope_draw_toolpreview);
     /* END RENDER TOOL PREVIEW */
 
+}
+
+function drawCurZlevelBackground() {
+    if (!requestDrawZlevelBackground) return;
+    requestDrawZlevelBackground = false;
+
+    // calculations to aid drawing process this makes sure we don't render (much) more than is necessary
+    var max_render_x = Math.min(camera_x + viewport_width_tiles, map_size_x) - 1;
+    var max_render_y = Math.min(camera_y + viewport_height_tiles, map_size_y) - 1;
+
+    /* START CLEAR */
+    var scope_draw_clearrect = WTF.trace.enterScope('draw.clearrect');
+    viewport_zlevel_background_drawcontext.clearRect(tile_size, tile_size, (viewport_width_tiles - menu_width_tiles) * tile_size, (viewport_height_tiles - 1) * tile_size);
+    WTF.trace.leaveScope(scope_draw_clearrect);
+    /* END CLEAR */
+
+    /* START RENDER Z LEVEL */
+    var scope_draw_zlevel_bg = WTF.trace.enterScope('draw.zlevel_background');
+
+    for (x = camera_x; x < max_render_x; x += 1) {
+        for (y = camera_y; y < max_render_y; y += 1) {
+            // only paint non-empty tiles
+            var curtile = map[camera_z][x][y];
+            if (curtile === tile_types.hidden) {
+                
+                var curbgtile = map_background[camera_z][x][y];
+
+                // hidden tiles have random backgrounds, paint those
+                if (curbgtile !== tile_types.hidden) {
+                    var pos_x = 1 + x - camera_x;
+                    var pos_y = 1 + y - camera_y;
+
+                    viewport_zlevel_background_drawcontext.drawImage(images[curbgtile], pos_x * 16, pos_y * 16, tile_size, tile_size);
+                }
+            }
+        }
+    }
+
+    WTF.trace.leaveScope(scope_draw_zlevel_bg);
+}
+
+function draw() {
+    /* START DRAW */
+    var scope_draw = WTF.trace.enterScope('draw');
+
+    drawCurZlevelBackground();
+
+    drawCurZlevel();
+
     /* START RENDER UI */
     var scope_draw_ui = WTF.trace.enterScope('draw.ui');
+
+
+    // Clear cursor layer
+    viewport_cursor_drawcontext.clearRect(tile_size, tile_size, (viewport_width_tiles - menu_width_tiles) * tile_size, viewport_height);
 
     // render cursor blinking when its down
     if (cursor_down && camera_z == cursor_start_z) {
         if (cursor_blink) {
-            viewport_element_drawcontext.drawImage(images.cursor_blink, (cursor_start_x - camera_x + 1) * 16, (cursor_start_y - camera_y + 1) * 16, tile_size, tile_size);
+            viewport_cursor_drawcontext.drawImage(images.cursor_blink, (cursor_start_x - camera_x + 1) * 16, (cursor_start_y - camera_y + 1) * 16, tile_size, tile_size);
+        } else {
         }
     }
 	
 	// render cursor
-	viewport_element_drawcontext.drawImage(images.cursor, (cursor_x - camera_x + 1) * 16, (cursor_y - camera_y + 1) * 16, tile_size, tile_size);
+	viewport_cursor_drawcontext.drawImage(images.cursor, (cursor_x - camera_x + 1) * 16, (cursor_y - camera_y + 1) * 16, tile_size, tile_size);
 
-    /* START RENDER CHROME */
-    var scope_draw_ui_chrome = WTF.trace.enterScope('draw.ui.chrome');
+	drawMenu();
 
-    var menu_bar = Math.floor(viewport_width / tile_size) - menu_width_tiles;
+    drawChrome();
 
-    viewport_element_drawcontext.fillStyle="black";
-    viewport_element_drawcontext.fillRect(menu_bar * tile_size, 0, viewport_width, viewport_height);
+    WTF.trace.leaveScope(scope_draw_ui);
+    /* END RENDER UI */
 
-    // render chrome: top bar
-    for (x = 0; x < viewport_width_tiles; x += 1) {
-        viewport_element_drawcontext.drawImage(images.chrome, x * 16, 0, tile_size, tile_size);
-    }
+    WTF.trace.leaveScope(scope_draw);
+    /* END DRAW */
+}
 
-    // render chrome: bottom bar
-    for (x = 0; x < viewport_width_tiles; x += 1) {
-        viewport_element_drawcontext.drawImage(images.chrome, x * 16, viewport_height_tiles * 16, tile_size, tile_size);
-    }
-
-    // render chrome: left bar
-    for (y = 0; y < viewport_height_tiles; y += 1) {
-        viewport_element_drawcontext.drawImage(images.chrome, 0, y * 16, tile_size, tile_size);
-    }
-
-    // render chrome: right bar
-    for (y = 0; y < viewport_height_tiles + 1; y += 1) {
-        viewport_element_drawcontext.drawImage(images.chrome, viewport_width_tiles * 16, y * 16, tile_size, tile_size);
-    }
-
-    // render chrome: middle bar ( for menu )
-    for (y = 0; y < viewport_height_tiles; y += 1) {
-        viewport_element_drawcontext.drawImage(images.chrome, menu_bar * 16, y * 16, tile_size, tile_size);
-    }
-
-    WTF.trace.leaveScope(scope_draw_ui_chrome);
-    /* END RENDER CHROME */
+function drawMenu() {
+    if (!requestDrawMenu) return;
+    requestDrawMenu = false;
 
     /* START RENDER MENU */
     var scope_draw_ui_menu = WTF.trace.enterScope('draw.ui.menu');
+
+    var menu_bar = Math.floor(viewport_width / tile_size) - menu_width_tiles;
+
+    viewport_menu_drawcontext.clearRect((viewport_width_tiles - menu_width_tiles + 2) * tile_size, tile_size, menu_width_tiles * tile_size, (viewport_height_tiles - 1) * tile_size);
 
     // paint current z-level in top right as 2 characters above each other
     var ui_x = (Math.floor(viewport_width / tile_size) - 1) * tile_size;
 
     var z = (camera_z + 1).toString();
-    viewport_element_drawcontext.font = text_font;
-    viewport_element_drawcontext.fillStyle = text_font_color_active;
-    viewport_element_drawcontext.fillText(z.substring(0, 1), ui_x + 3, tile_size * 2);
-    viewport_element_drawcontext.fillText(z.substring(1, 2), ui_x + 3, tile_size * 3);
+    viewport_menu_drawcontext.font = text_font;
+    viewport_menu_drawcontext.fillStyle = text_font_color_active;
+    viewport_menu_drawcontext.fillText(z.substring(0, 1), ui_x + 3, tile_size * 2);
+    viewport_menu_drawcontext.fillText(z.substring(1, 2), ui_x + 3, tile_size * 3);
 
     // draw menu
     pos_x = (menu_bar + 2) * tile_size; // pos_x indicates the starting position for the menu items. This is next to the menu bar with 1 tile in between.
@@ -1098,23 +1180,63 @@ function draw() {
         if (tool.name == "Spacer") { continue; }
 
         if (tool == cursor_tool) {
-            viewport_element_drawcontext.fillStyle = text_font_color_active;
+            viewport_menu_drawcontext.fillStyle = text_font_color_active;
         } else {
-            viewport_element_drawcontext.fillStyle = text_font_color;
+            viewport_menu_drawcontext.fillStyle = text_font_color;
         }
 
-        viewport_element_drawcontext.fillText(tool.name, pos_x, pos_y + (text_line_height * n)); // paint name of tool on the left side
-        viewport_element_drawcontext.fillText("( " + tool.hotkey + " )", pos_x + ((menu_width_tiles * tile_size) - 100), pos_y + (text_line_height * n)); // paint hotkey of tool on the right side
+        viewport_menu_drawcontext.fillText(tool.name, pos_x, pos_y + (text_line_height * n)); // paint name of tool on the left side
+        viewport_menu_drawcontext.fillText("( " + tool.hotkey + " )", pos_x + ((menu_width_tiles * tile_size) - 100), pos_y + (text_line_height * n)); // paint hotkey of tool on the right side
     }
 
     WTF.trace.leaveScope(scope_draw_ui_menu);
     /* END RENDER MENU */
+}
 
-    WTF.trace.leaveScope(scope_draw_ui);
-    /* END RENDER UI */
+function drawChrome() {
+    if (!requestDrawChrome) return;
+    requestDrawChrome = false;
 
-    WTF.trace.leaveScope(scope_draw);
-    /* END DRAW */
+    logmessage("draw chrome");
+
+    /* START RENDER CHROME */
+    var scope_draw_ui_chrome = WTF.trace.enterScope('draw.ui.chrome');
+
+    var menu_bar = Math.floor(viewport_width / tile_size) - menu_width_tiles;
+
+    viewport_chrome_drawcontext.clearRect(menu_bar * tile_size, 0, viewport_width, viewport_height);
+
+    // render a black background in the menu area
+    viewport_chrome_drawcontext.fillStyle = "black";
+    viewport_chrome_drawcontext.fillRect((viewport_width_tiles - menu_width_tiles + 2) * tile_size, tile_size, menu_width_tiles * tile_size, (viewport_height_tiles - 1) * tile_size);
+
+    // render chrome: top bar
+    for (x = 0; x < viewport_width_tiles; x += 1) {
+        viewport_chrome_drawcontext.drawImage(images.chrome, x * 16, 0, tile_size, tile_size);
+    }
+
+    // render chrome: bottom bar
+    for (x = 0; x < viewport_width_tiles; x += 1) {
+        viewport_chrome_drawcontext.drawImage(images.chrome, x * 16, viewport_height_tiles * 16, tile_size, tile_size);
+    }
+
+    // render chrome: left bar
+    for (y = 0; y < viewport_height_tiles; y += 1) {
+        viewport_chrome_drawcontext.drawImage(images.chrome, 0, y * 16, tile_size, tile_size);
+    }
+
+    // render chrome: right bar
+    for (y = 0; y < viewport_height_tiles + 1; y += 1) {
+        viewport_chrome_drawcontext.drawImage(images.chrome, viewport_width_tiles * 16, y * 16, tile_size, tile_size);
+    }
+
+    // render chrome: middle bar ( for menu )
+    for (y = 0; y < viewport_height_tiles; y += 1) {
+        viewport_chrome_drawcontext.drawImage(images.chrome, menu_bar * 16, y * 16, tile_size, tile_size);
+    }
+
+    WTF.trace.leaveScope(scope_draw_ui_chrome);
+    /* END RENDER CHROME */
 }
 
 function logmessage(message) {

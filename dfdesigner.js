@@ -619,8 +619,10 @@ function enableDesigner() {
         }
 
         switch (evt.keyCode) {
-            case 28: // escape
+            case 27: // escape
                 // menu up (or close notices etc.)
+                cursor_down = false;
+                requestDrawZlevel = true;
                 break;
             case 39: // right arrow
                 moveCursor(camera_z, cursor_x + step, cursor_y);
@@ -827,6 +829,8 @@ function handle_onMouseUp(x, y) {
 }
 
 function handle_endAreaSelect() {
+    if (!cursor_down) return;
+
     WTF.trace.timeStamp('handle_endAreaSelect');
 
     cursor_down = false;

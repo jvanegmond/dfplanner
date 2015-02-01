@@ -399,20 +399,6 @@ function loadTools() {
         }
     };
 
-    // Clear tool for current z-level
-    tools.clearlevel = {
-        name: "Clear selected z-level",
-        type: tool_type_level,
-        hotkey: "y",
-        preview: false,
-        keycode: 89,
-        run: function(map, tool_selector) {
-            tool_selector(function(x,y,z) {
-                map[z][x][y] = tile_types.hidden;
-            });
-        }
-    };
-
     // Export tool
     tools.export_quickfort = {
         name: "Export to QuickFort",

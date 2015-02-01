@@ -904,16 +904,13 @@ function moveCursor(z, x, y, dont_move_camera) {
     camera_z = Math.min(Math.max(z, 0), map_size_z - 1);
     cursor_x = Math.min(Math.max(x, 0), map_size_x - 1);
     cursor_y = Math.min(Math.max(y, 0), map_size_y - 1);
-
-    if (camera_z != old_camera_z) {
-        requestDrawZlevelBackground = true;
-    }
-
+    
     if (!dont_move_camera) {
         moveCameraToCursor();
     }
 
     requestDrawZlevel = true;
+    requestDrawZlevelBackground = true;
 
     return true;
 }

@@ -367,6 +367,24 @@ function loadTools() {
 
     tools.space1 = { name: "Spacer", select: function(oldtool) { cursor_tool = oldtool; } };
 
+    // Inverse
+    tools.inverse = {
+        name: "Invert designation",
+        type: tool_type_area_square | tool_type_area_circle,
+        hotkey: "v",
+        preview: true,
+        keycode: 86,
+        run: function(temp_map, tool_selector) {
+            tool_selector(function(x,y,z) {
+                if (map[z][x][y] === tile_types.hidden) {
+                    temp_map[z][x][y] = tile_types.dig;
+                } else {
+                    temp_map[z][x][y] = tile_types.hidden;
+                }
+            });
+        }
+    };
+
     // Remove designation tool
     tools.removedes = {
         name: "Remove designation",
@@ -1023,7 +1041,7 @@ function drawCurZlevel() {
         /* START TOOL PREVIEW INITIALIZE */
         var scope_draw_toolpreview_initmap = WTF.trace.enterScope('draw.toolpreview.initmap');
 
-        // initialize map as a series of arrays containing arrays
+        // Clear temp map
         for (z = 0; z < map_size_z; z += 1) {
             for (x = 0; x < map_size_x; x += 1) {
                 for (y = 0; y < map_size_y; y += 1) {
@@ -1055,13 +1073,13 @@ function drawCurZlevel() {
 
                 if (map_temp[camera_z][x][y] === undefined) { continue; }
 
+                // if a tool removes a tile, clear the drawn tile from the actual map
+                if (map_temp[camera_z][x][y] === tile_types.hidden && map[camera_z][x][y] !== tile_types.hidden) {
+                    viewport_zlevel_drawcontext.clearRect(pos_x * 16, pos_y * 16, tile_size, tile_size);
+                }
+
                 if (map_temp[camera_z][x][y] !== tile_types.hidden) {
                     viewport_zlevel_drawcontext.drawImage(images[map_temp[camera_z][x][y]], pos_x * 16, pos_y * 16, tile_size, tile_size);
-                } else {
-                    // if a tool removes a tile, paint that
-                    if (map[camera_z][x][y] !== tile_types.hidden) {
-                        viewport_zlevel_drawcontext.clearRect(pos_x * 16, pos_y * 16, tile_size, tile_size);
-                    }
                 }
             }
         }
